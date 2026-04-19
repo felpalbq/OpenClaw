@@ -9,6 +9,10 @@ import sys
 import argparse
 from pathlib import Path
 
+# Forcar UTF-8 no Windows
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -18,9 +22,9 @@ os.environ.setdefault("STATE_FILE", "state_test.json")
 FIXTURES_DIR = ROOT / "tests" / "fixtures"
 
 
-def ok(msg): print(f"  ✓ {msg}")
-def fail(msg): print(f"  ✗ {msg}")
-def section(title): print(f"\n{'─'*50}\n  {title}\n{'─'*50}")
+def ok(msg): print(f"  [OK] {msg}")
+def fail(msg): print(f"  [X]  {msg}")
+def section(title): print(f"\n{'='*50}\n  {title}\n{'='*50}")
 
 
 # ============================================================
@@ -164,7 +168,7 @@ def validate_level_2():
         return True
     else:
         fail("Nenhum resultado de agente encontrado no estado")
-        print("  → Agente rodou via cron desde a última injeção?")
+        print("  -> Agente rodou via cron desde a última injeção?")
         return False
 
 
@@ -234,7 +238,7 @@ def validate_level_4():
 
     if not has_complete:
         fail("Nenhuma tarefa com ciclo completo encontrado no estado")
-        print("  → Sistema rodou ciclo completo desde a última injeção?")
+        print("  -> Sistema rodou ciclo completo desde a última injeção?")
 
     return has_complete
 
@@ -251,9 +255,9 @@ def main():
                         help="Output detalhado")
     args = parser.parse_args()
 
-    print("\n╔══════════════════════════════════════════════════════╗")
-    print("║     OpenClaw — Validate — Checks Objetivos           ║")
-    print("╚══════════════════════════════════════════════════════╝")
+    print("\n==================================================")
+    print("  OpenClaw — Validate — Checks Objetivos")
+    print("==================================================")
 
     levels = {
         0: ("Estado", validate_level_0),
@@ -265,17 +269,19 @@ def main():
 
     if args.level is not None:
         if args.level not in levels:
-            print(f"\n  ✗ Nível inválido: {args.level}. Use 0-4.\n")
+            print(f"\n  [X] Nível inválido: {args.level}. Use 0-4.\n")
             return
         name, fn = levels[args.level]
         passed = fn()
-        print(f"\n  {'✓ PASSOU' if passed else '✗ FALHOU'} — Nível {args.level} ({name})\n")
+        status = "PASSOU" if passed else "FALHOU"
+        print(f"\n  [{status}] Nível {args.level} ({name})\n")
     else:
         results = {}
         for level, (name, fn) in levels.items():
             passed = fn()
             results[level] = passed
-            print(f"  {'✓' if passed else '✗'} Nível {level} ({name})")
+            mark = "OK" if passed else " X"
+            print(f"  [{mark}] Nível {level} ({name})")
         print(f"\n  Total: {sum(results.values())}/{len(results)} passaram\n")
 
 

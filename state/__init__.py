@@ -1,0 +1,28 @@
+import json
+import os
+from pathlib import Path
+from datetime import datetime
+
+STATE_DIR = Path(__file__).parent
+STATE_FILE = os.environ.get("STATE_FILE", "state.json")
+STATE_PATH = STATE_DIR / STATE_FILE
+LOCK_PATH = STATE_DIR / f"{STATE_FILE}.lock"
+
+
+def read_state() -> dict:
+    if not STATE_PATH.exists():
+        return {}
+    with open(STATE_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_state(data: dict, agent: str = "", reason: str = ""):
+    if agent:
+        if "meta" not in data:
+            data["meta"] = {}
+        data["meta"]["last_written_by"] = agent
+        data["meta"]["last_written_reason"] = reason
+        data["meta"]["last_written_at"] = datetime.now().isoformat()
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(STATE_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)

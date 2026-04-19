@@ -10,6 +10,7 @@ cache/
 tmp/
 runtime/
 state/
+!state/__init__.py
 events/
 tests/results/
 
