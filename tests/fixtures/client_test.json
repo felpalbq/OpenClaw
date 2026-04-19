@@ -1,0 +1,34 @@
+{
+  "id": "client_test_001",
+  "name": "Bella Estética (TESTE)",
+  "niche": "estética e beleza",
+  "tone": "acolhedor e profissional",
+  "audience": "mulheres 25-45, classe média, Salvador-BA",
+  "objective": "aumentar agendamentos via Instagram",
+  "positioning": "especialista em tratamentos faciais naturais",
+  "voice_samples": [
+    {
+      "text": "Sua pele merece cuidado de verdade. Agende agora.",
+      "format": "caption",
+      "note": "tom direto mas acolhedor, CTA simples"
+    },
+    {
+      "text": "3 sinais de que sua rotina de skincare precisa mudar",
+      "format": "carousel_title",
+      "note": "gancho por problema identificável"
+    }
+  ],
+  "content_preferences": {
+    "formats": ["carousel", "reels_script", "caption"],
+    "frequency": "3x por semana",
+    "avoid": ["tom muito técnico", "jargão médico"]
+  },
+  "distribution": {
+    "trello": {"enabled": true, "list": "A Fazer"},
+    "drive": {"enabled": true, "folder": "Bella Estética/Conteúdo"},
+    "telegram": {"enabled": false},
+    "email": {"enabled": false}
+  },
+  "_test_only": true,
+  "_note": "cliente sintético para testes — nunca usar em produção"
+}

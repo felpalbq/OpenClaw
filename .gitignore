@@ -11,3 +11,4 @@ tmp/
 runtime/
 state/
 events/
+tests/results/

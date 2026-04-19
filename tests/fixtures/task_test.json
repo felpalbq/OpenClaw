@@ -1,0 +1,45 @@
+{
+  "tasks": [
+    {
+      "id": "task_test_001",
+      "client_id": "client_test_001",
+      "type": "content_production",
+      "subtype": "carousel",
+      "topic": "3 erros comuns na rotina de skincare",
+      "status": "pending_architecture",
+      "priority": "normal",
+      "created_at": "2026-04-19T08:00:00",
+      "deadline": "2026-04-20T18:00:00",
+      "_test_only": true
+    },
+    {
+      "id": "task_test_002",
+      "client_id": "client_test_001",
+      "type": "content_production",
+      "subtype": "reels_script",
+      "topic": "antes e depois de tratamento facial",
+      "status": "pending_architecture",
+      "priority": "low",
+      "created_at": "2026-04-19T08:00:00",
+      "deadline": "2026-04-21T18:00:00",
+      "_test_only": true
+    },
+    {
+      "id": "task_test_003",
+      "client_id": "client_test_001",
+      "type": "content_production",
+      "subtype": "caption",
+      "topic": "promoção dia das mães",
+      "status": "architecture_done",
+      "architecture": {
+        "angle": "conexão emocional mãe-filha via cuidado com a pele",
+        "format": "caption com CTA para agendamento",
+        "hook": "Presente que ela nunca esquece"
+      },
+      "priority": "high",
+      "created_at": "2026-04-19T06:00:00",
+      "deadline": "2026-04-19T20:00:00",
+      "_test_only": true
+    }
+  ]
+}
