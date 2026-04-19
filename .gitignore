@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.log
+.env
+identity/
+*.sqlite
+sessions/
+logs/
+cache/
+tmp/
+runtime/
+state/
+events/

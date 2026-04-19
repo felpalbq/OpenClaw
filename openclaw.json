@@ -1,0 +1,19 @@
+{
+  "system": {
+    "name": "OpenClaw",
+    "type": "organism",
+    "state_path": "state/state.json"
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "workspace"
+    }
+  },
+  "gateway": {
+    "mode": "local"
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.4.19",
+    "lastTouchedAt": "2026-04-19T00:00:00.000Z"
+  }
+}
