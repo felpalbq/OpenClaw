@@ -12,3 +12,12 @@ runtime/
 state/
 events/
 tests/results/
+
+# OpenClaw CLI runtime (not project code)
+agents/
+canvas/
+completions/
+devices/
+flows/
+tasks/
+update-check.json
