@@ -96,22 +96,25 @@ Ahri (interpreta) → state.intentions (NL) → intent_resolver (traduz + valida
 
 ---
 
-## ESTRATÉGIA — Ahri (futuro)
+## MEMÓRIA — HQ Memory + External Memory
 
-**Natureza:** persistente, versionada por cliente, aprende com tempo
-**Localização:** futuro — memória estratégica separada
+**Natureza:** persistente, curada, pareada
+**Localização:** `memory/` (HQ — .md legível) + `ahri/` repo (externa — .json programático)
 
-### Responsabilidade (quando implementada)
+### Regras
 
-- Histórico de decisões estratégicas
-- Aprendizado por cliente
-- Adaptação baseada em performance histórica
+- **HQ memory** (`memory/`): curada, limitada, editável pelo Chefe, formato .md
+- **External memory** (`ahri/`): orgânica, versionada em Git, mantida por pipeline, formato .json
+- **Pareamento unidirecional:** ahri/ → memory/. Tudo no HQ tem correspondente no externo. Nem tudo no externo vira entrada no HQ.
+- **São resoluções diferentes da mesma informação** — não duplicam, pareiam
+- HQ memory é o reflexo operacional do que é essencial na memória externa
 
 ### Contrato com Estado
 
 - Ahri lê estado para contexto imediato
 - Ahri altera estado apenas nas 6 condições de P6
 - Ahri NÃO orquestra agentes — agentes leem estado e agem por condição
+- Ahri acessa HQ memory para contexto operacional, NÃO lê sessions diretamente
 
 ---
 
@@ -152,4 +155,4 @@ Não há setas entre agentes. Não há sequência. Há um campo compartilhado �
 | **Comportamento** | Layouts, constraints, estilos | `workspace/layouts/` | Git (código) |
 | **Intenção** | Tradução NL → ação estruturada | `state.intentions` + `intent_resolver.py` | Transitório (1h) |
 | **Estado** | Hub contínuo — clientes, conteúdo, tarefas, distribuições | `state/state.json` | Persistente |
-| **Estratégia** | Aprendizado, histórico, adaptação | Futuro | Permanente + versionado |
+| **Estratégia** | Aprendizado, histórico, adaptação | `memory/` + `ahri/` | Permanente + versionado + pareado |
