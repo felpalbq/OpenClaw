@@ -9,13 +9,14 @@ logs/
 cache/
 tmp/
 runtime/
-state/
+state/*
 !state/__init__.py
+!state/state.json
 events/
 tests/results/
 
 # OpenClaw CLI runtime (not project code)
-agents/
+agents/main/
 canvas/
 completions/
 devices/

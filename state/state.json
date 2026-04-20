@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "last_updated": "",
+    "version": "1.0.0",
+    "last_written_by": "ahri",
+    "last_written_reason": "interaction",
+    "last_written_at": "2026-04-19T22:31:19.148800"
+  },
+  "clients": {},
+  "tasks": {},
+  "modules": {},
+  "ahri": {
+    "last_interaction": "2026-04-19T22:31:19.148769",
+    "current_context": "O que voce pode fazer?"
+  },
+  "integrations": {
+    "google": {
+      "status": "unknown"
+    },
+    "trello": {
+      "status": "unknown"
+    },
+    "supabase": {
+      "status": "unknown"
+    },
+    "telegram": {
+      "status": "unknown"
+    }
+  }
+}

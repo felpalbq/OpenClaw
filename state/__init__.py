@@ -1,5 +1,6 @@
 import json
 import os
+import msvcrt
 from pathlib import Path
 from datetime import datetime
 
@@ -24,5 +25,15 @@ def write_state(data: dict, agent: str = "", reason: str = ""):
         data["meta"]["last_written_reason"] = reason
         data["meta"]["last_written_at"] = datetime.now().isoformat()
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lock_fd = open(LOCK_PATH, "w")
+    try:
+        msvcrt.locking(lock_fd.fileno(), msvcrt.LK_LOCK, 1)
+        with open(STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    finally:
+        try:
+            msvcrt.locking(lock_fd.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        lock_fd.close()
