@@ -2,7 +2,7 @@
   "meta": {
     "mode": "test",
     "created_at": "injected_by_tests",
-    "stage": 0
+    "version": "1.0.0"
   },
   "clients": {
     "client_test_001": {
@@ -11,23 +11,22 @@
     }
   },
   "tasks": {
-    "task_test_001": {"status": "pending_architecture"},
-    "task_test_002": {"status": "pending_architecture"},
+    "task_test_001": {"status": "pending"},
+    "task_test_002": {"status": "pending"},
     "task_test_003": {
-      "status": "architecture_done",
-      "architecture": {
-        "angle": "conexão emocional mãe-filha via cuidado com a pele",
-        "format": "caption com CTA para agendamento",
-        "hook": "Presente que ela nunca esquece"
-      }
+      "status": "ready",
+      "brief": "caption para post de skincare"
     }
   },
-  "agents": {},
+  "modules": {},
+  "ahri": {
+    "last_interaction": "",
+    "current_context": ""
+  },
   "integrations": {
     "google": {"status": "unknown"},
     "trello": {"status": "unknown"},
     "supabase": {"status": "unknown"},
-    "telegram": {"status": "unknown"},
-    "openrouter": {"status": "unknown"}
+    "telegram": {"status": "unknown"}
   }
 }

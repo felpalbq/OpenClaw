@@ -73,6 +73,20 @@ def inject():
             state["tasks"][task_id] = task
     print(f"  [OK] Tarefas injetadas: {len(tasks.get('tasks', []))}")
 
+    # Garantir seções base (modules, ahri, integrations)
+    if "modules" not in state:
+        state["modules"] = {}
+    if "ahri" not in state:
+        state["ahri"] = {"last_interaction": "", "current_context": ""}
+    if "integrations" not in state:
+        state["integrations"] = {
+            "google": {"status": "unknown"},
+            "trello": {"status": "unknown"},
+            "supabase": {"status": "unknown"},
+            "telegram": {"status": "unknown"}
+        }
+    print(f"  [OK] Seções base do estado garantidas (modules, ahri, integrations)")
+
     # Marcar que dados de teste foram injetados
     if "meta" not in state:
         state["meta"] = {}

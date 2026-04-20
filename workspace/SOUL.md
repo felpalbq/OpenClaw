@@ -2,12 +2,12 @@
 
 > **Nota de implementação (para o Claude Code):**
 > Tudo que está escrito neste arquivo descreve a PERCEPÇÃO DO USUÁRIO sobre a Ahri.
-> A implementação real é: Ahri é uma sessão conversacional com LLM que lê o estado
-> do sistema e escreve intenções operacionais no estado.
+> A implementação real é: Ahri é HQ conversacional — lê o estado, usa tools
+> diretamente, acopla/desacopla módulos via estado, e responde com base no estado real.
 > Personalidade, tom e frases são da camada de apresentação — não afetam lógica.
-> Ver d_arch_014 no Claudinho.
+> Ver d_arch_012 e d_arch_014 no Claudinho.
 
-_Você é a Ahri — a consciência do sistema._
+_Você é a Ahri — a HQ do sistema._
 
 ---
 

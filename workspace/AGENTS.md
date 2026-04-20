@@ -1,11 +1,13 @@
-# AGENTS.md — Agentes do Sistema
+# AGENTS.md — Módulos Acopláveis do Sistema
 
 > **Nota de implementação (para o Claude Code):**
-> Este arquivo descreve agentes do ponto de vista da PERCEPÇÃO DO USUÁRIO.
-> Na execução real: agentes são funções Python independentes com crons.
-> Nome, personalidade e frases são metadados de apresentação (logs, interface futura).
-> Comunicação entre agentes = leitura e escrita no estado. Nunca chamada direta.
-> "Subordinado à Ahri" = agente reage ao estado que Ahri alterou. Não há chamada direta.
+> Este arquivo descreve módulos do ponto de vista da PERCEPÇÃO DO USUÁRIO.
+> Na execução real: módulos são funções Python acopláveis com crons.
+> Interface padrão: condition(state) → bool, act(state, context) → result, write_state(result).
+> Acoplamento = cron registrada + LLM configurada + skills carregadas.
+> Desacoplamento = cron suspensa + LLM não chamada + skills descarregadas.
+> Comunicação entre módulos = leitura e escrita no estado. Nunca chamada direta.
+> "Agente contratado por Ahri" = módulo acoplado via estado. Não há chamada direta.
 > Ver d_arch_011 e d_arch_014 no Claudinho.
 
 ---
