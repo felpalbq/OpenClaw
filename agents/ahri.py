@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import uuid
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -9,10 +10,7 @@ ROOT = str(Path(__file__).parent.parent)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from state import read_state, write_state, merge_state
-from executor import create_action, get_action_result, get_pending_approvals
-from intent_resolver import register_intention, get_ambiguous_intentions, resolve_ambiguity
-from tools.registry import TOOL_REGISTRY, get_tool
+from state import read_state, write_state
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -92,36 +90,7 @@ def _llm_call(messages: list) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Conversation history
-# ---------------------------------------------------------------------------
-
-MAX_HISTORY = 20
-HISTORY_TIMEOUT_MINUTES = 30
-
-
-def _get_history(state: dict) -> list:
-    return state.get("ahri", {}).get("conversation_history", [])
-
-
-def _add_to_history(state: dict, role: str, content: str):
-    history = state.setdefault("ahri", {}).setdefault("conversation_history", [])
-    last = history[-1] if history else None
-    if last:
-        try:
-            elapsed = (datetime.now() - datetime.fromisoformat(last.get("ts", ""))).total_minutes()
-            if elapsed > HISTORY_TIMEOUT_MINUTES:
-                history = []
-                state["ahri"]["conversation_history"] = history
-        except (ValueError, TypeError, AttributeError):
-            pass
-
-    history.append({"role": role, "content": content, "ts": datetime.now().isoformat()})
-    if len(history) > MAX_HISTORY:
-        state["ahri"]["conversation_history"] = history[-MAX_HISTORY:]
-
-
-# ---------------------------------------------------------------------------
-# Proactivity
+# Proactivity (reads/writes state only)
 # ---------------------------------------------------------------------------
 
 def _can_notify(priority: str, state: dict) -> bool:
@@ -171,7 +140,7 @@ def send_notification(text: str, priority: str = "normal", chat_id: str = None) 
 
 
 # ---------------------------------------------------------------------------
-# Telegram
+# Telegram (I/O only — no state mutation beyond what send_notification does)
 # ---------------------------------------------------------------------------
 
 def telegram_send(text: str, chat_id: str = None) -> bool:
@@ -205,6 +174,10 @@ def telegram_get_updates(offset: int = 0) -> list:
         return []
 
 
+# ---------------------------------------------------------------------------
+# Approval handling — reads/writes state only
+# ---------------------------------------------------------------------------
+
 def _parse_approval(text: str):
     text = text.strip()
     if text.startswith("/approve "):
@@ -214,33 +187,94 @@ def _parse_approval(text: str):
     return None, None
 
 
+def _approve_via_state(action_id: str, approved_by: str) -> bool:
+    state = read_state()
+    for action in state.get("pending_actions", []):
+        if action.get("id") == action_id and action.get("status") == "pending_approval":
+            action["status"] = "approved"
+            action["approved_at"] = datetime.now().isoformat()
+            action["approved_by"] = approved_by
+            write_state(state, agent="user", reason=f"approved_{action_id}")
+            return True
+    return False
+
+
+def _reject_via_state(action_id: str, rejected_by: str) -> bool:
+    state = read_state()
+    for action in state.get("pending_actions", []):
+        if action.get("id") == action_id and action.get("status") == "pending_approval":
+            action["status"] = "rejected"
+            write_state(state, agent="user", reason=f"rejected_{action_id}")
+            return True
+    return False
+
+
+def get_pending_approvals() -> list:
+    state = read_state()
+    return [a for a in state.get("pending_actions", [])
+            if a.get("status") == "pending_approval"]
+
+
+# ---------------------------------------------------------------------------
+# Intention registration — writes to state only
+# ---------------------------------------------------------------------------
+
+def _register_intention_via_state(text: str, source: str = "ahri", context: dict = None) -> str:
+    intention_id = f"int_{uuid.uuid4().hex[:8]}"
+    intention = {
+        "id": intention_id,
+        "text": text,
+        "source": source,
+        "status": "pending",
+        "created_at": datetime.now().isoformat(),
+        "resolved_at": None,
+        "resolved_action_id": None,
+        "ambiguity": None,
+        "candidates": [],
+        "confidence": None,
+        "resolution_reason": None,
+    }
+    if context:
+        intention["context"] = context
+
+    state = read_state()
+    state.setdefault("intentions", []).append(intention)
+    write_state(state, agent=source, reason=f"intention_registered_{intention_id}")
+
+    return intention_id
+
+
+def _get_ambiguous_intentions() -> list:
+    state = read_state()
+    return [i for i in state.get("intentions", []) if i.get("status") == "ambiguous"]
+
+
+# ---------------------------------------------------------------------------
+# Telegram update handler — all communication via state
+# ---------------------------------------------------------------------------
+
 def handle_telegram_update(update: dict):
     text = update.get("message", {}).get("text", "")
     chat_id = str(update.get("message", {}).get("chat", {}).get("id", ""))
 
-    # Check for approval commands
     action_type, action_id = _parse_approval(text)
     if action_type == "approve":
-        from executor import approve_action
-        if approve_action(action_id, approved_by=f"telegram_{chat_id}"):
+        if _approve_via_state(action_id, approved_by=f"telegram_{chat_id}"):
             telegram_send("Acao aprovada. Executando...", chat_id)
         else:
             telegram_send("Acao nao encontrada ou ja processada.", chat_id)
         return
 
     if action_type == "reject":
-        from executor import reject_action
-        if reject_action(action_id, rejected_by=f"telegram_{chat_id}"):
+        if _reject_via_state(action_id, rejected_by=f"telegram_{chat_id}"):
             telegram_send("Acao rejeitada.", chat_id)
         else:
             telegram_send("Acao nao encontrada ou ja processada.", chat_id)
         return
 
-    # Normal conversation
     response = ask(text)
     telegram_send(response, chat_id)
 
-    # Show pending approvals
     pending = get_pending_approvals()
     if pending:
         lines = ["Acoes pendentes de aprovacao:"]
@@ -250,7 +284,7 @@ def handle_telegram_update(update: dict):
 
 
 # ---------------------------------------------------------------------------
-# Core: ask() — operates via state, never directly
+# Core: ask() — communicates ONLY via state
 # ---------------------------------------------------------------------------
 
 def ask(question: str, state: dict = None) -> str:
@@ -258,7 +292,6 @@ def ask(question: str, state: dict = None) -> str:
         state = read_state()
 
     state_summary = _summarize_state(state)
-    history = _get_history(state)
     memory_context = _get_memory_context()
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -266,24 +299,19 @@ def ask(question: str, state: dict = None) -> str:
     if memory_context:
         messages.append({"role": "system", "content": f"Memoria recente:\n{memory_context}"})
 
-    for entry in history:
-        messages.append({"role": entry["role"], "content": entry["content"]})
-
     messages.append({
         "role": "user",
         "content": f"Estado atual:\n{state_summary}\n\nMensagem do Chefe: {question}",
     })
 
     response = _llm_call(messages)
-    _add_to_history(state, "user", question)
-    _add_to_history(state, "assistant", response)
 
-    # Extract intentions and register in state (natural language, not structured)
+    # Extract intentions and register via state
     intentions = _extract_intentions(response)
 
     for intention_text in intentions:
         try:
-            int_id = register_intention(intention_text, source="ahri", context={"question": question[:200]})
+            _register_intention_via_state(intention_text, source="ahri", context={"question": question[:200]})
         except Exception:
             pass
 
@@ -291,7 +319,7 @@ def ask(question: str, state: dict = None) -> str:
     response = _strip_intentions(response)
 
     # Check for ambiguous intentions that need user clarification
-    ambiguous = get_ambiguous_intentions()
+    ambiguous = _get_ambiguous_intentions()
     for amb in ambiguous:
         candidates = amb.get("candidates", [])
         amb_text = amb.get("ambiguity", "")
@@ -300,126 +328,71 @@ def ask(question: str, state: dict = None) -> str:
         else:
             response += f"\n\nNao consegui entender exatamente: {amb_text}. Pode ser mais especifico?"
 
-    # Update state
-    state.setdefault("ahri", {})
-    state["ahri"]["last_interaction"] = datetime.now().isoformat()
-    state["ahri"]["current_context"] = question[:200]
-    write_state(state, agent="ahri", reason="interaction")
-
-    # Register in memory if relevant
+    # Log to sessions (append-only)
     try:
-        from ahri_memory import write_memory, should_register
-        entry = {"type": "interaction", "summary": question[:200], "relevance": "medium"}
-        if should_register(entry):
-            write_memory(entry)
+        from memory_sessions import append_session
+        append_session("user", question, metadata={"source": "telegram"})
+        append_session("assistant", response, metadata={"source": "ahri"})
     except ImportError:
         pass
+
+    # Update runtime state
+    state = read_state()
+    state.setdefault("ahri_runtime", {})
+    state["ahri_runtime"]["last_interaction"] = datetime.now().isoformat()
+    write_state(state, agent="ahri", reason="interaction")
 
     return response
 
 
 def ask_for_result(action_id: str) -> str:
-    result = get_action_result(action_id)
-    if not result:
-        return "Resultado nao encontrado."
-
-    status = result.get("status", "unknown")
-    data = result.get("data")
-    error = result.get("error")
-
-    if status == "success" and data:
-        return json.dumps(data, ensure_ascii=False, indent=2)
-    elif error:
-        return f"Erro: {error}"
-    else:
-        return "Acao ainda em andamento."
-
-
-def propose_action(tool_name: str, params: dict = None, priority: str = "normal") -> str:
-    """Direct action creation for programmatic use (proactive checks, etc.).
-    For user intents, use register_intention() instead."""
-    tool_def = get_tool(tool_name)
-    if not tool_def:
-        return f"Tool nao encontrada: {tool_name}"
-
-    try:
-        act_id = create_action(tool_name, params=params, source="ahri", priority=priority)
-        if tool_def["requires_approval"]:
-            return f"Acao {act_id} criada. Aguardando aprovacao."
-        return f"Acao {act_id} criada e sera executada."
-    except ValueError as e:
-        return str(e)
+    state = read_state()
+    for action in state.get("pending_actions", []):
+        if action.get("id") == action_id:
+            result_ref = action.get("result_ref", "")
+            result = state.get("results", {}).get(result_ref, {})
+            if not result:
+                return "Resultado ainda nao disponivel."
+            status = result.get("status", "unknown")
+            data = result.get("data")
+            error = result.get("error")
+            if status == "success" and data:
+                return json.dumps(data, ensure_ascii=False, indent=2)
+            elif error:
+                return f"Erro: {error}"
+            else:
+                return "Acao ainda em andamento."
+    return "Resultado nao encontrado."
 
 
 # ---------------------------------------------------------------------------
-# Proactive checks (called by crons)
-# ---------------------------------------------------------------------------
-
-def check_upcoming_events():
-    state = read_state()
-    act_id = create_action("calendar_today", source="ahri_proactive", priority="alta")
-    return act_id
-
-
-def check_integration_health():
-    state = read_state()
-    actions = []
-    for tool_name in ("trello_test", "supabase_health"):
-        tool_def = get_tool(tool_name)
-        if tool_def:
-            actions.append(create_action(tool_name, source="ahri_proactive", priority="normal"))
-    return actions
-
-
-def check_overdue_tasks():
-    state = read_state()
-    tasks = state.get("tasks", {})
-    overdue = []
-    now = datetime.now()
-
-    for task_id, task in tasks.items():
-        if not isinstance(task, dict):
-            continue
-        due = task.get("due_time") or task.get("due_date")
-        if due and task.get("status") not in ("done", "complete"):
-            try:
-                if datetime.fromisoformat(due) < now:
-                    overdue.append({"id": task_id, "due": due})
-            except (ValueError, TypeError):
-                pass
-
-    if overdue:
-        msg = f"Chefe, {len(overdue)} tarefa(s) vencida(s): " + ", ".join(t["id"] for t in overdue)
-        send_notification(msg, priority="alta")
-    return overdue
-
-
-# ---------------------------------------------------------------------------
-# Audit mode
+# Audit mode — reads/writes state only
 # ---------------------------------------------------------------------------
 
 def start_audit(scope: str, duration_minutes: int = 30):
     state = read_state()
-    state["ahri"]["audit_mode"] = True
-    state["ahri"]["audit_scope"] = scope
-    state["ahri"]["audit_expires_at"] = (datetime.now() + timedelta(minutes=duration_minutes)).isoformat()
+    state.setdefault("ahri_runtime", {})
+    state["ahri_runtime"]["audit_mode"] = True
+    state["ahri_runtime"]["audit_scope"] = scope
+    state["ahri_runtime"]["audit_expires_at"] = (datetime.now() + timedelta(minutes=duration_minutes)).isoformat()
     write_state(state, agent="user", reason="audit_authorized")
 
 
 def stop_audit():
     state = read_state()
-    state["ahri"]["audit_mode"] = False
-    state["ahri"]["audit_scope"] = None
-    state["ahri"]["audit_expires_at"] = None
+    state.setdefault("ahri_runtime", {})
+    state["ahri_runtime"]["audit_mode"] = False
+    state["ahri_runtime"]["audit_scope"] = None
+    state["ahri_runtime"]["audit_expires_at"] = None
     write_state(state, agent="ahri", reason="audit_expired")
 
 
 def is_audit_active(state: dict = None) -> bool:
     if state is None:
         state = read_state()
-    if not state.get("ahri", {}).get("audit_mode"):
+    if not state.get("ahri_runtime", {}).get("audit_mode"):
         return False
-    expires = state["ahri"].get("audit_expires_at")
+    expires = state["ahri_runtime"].get("audit_expires_at")
     if expires:
         try:
             if datetime.now() > datetime.fromisoformat(expires):
@@ -437,38 +410,15 @@ def is_audit_active(state: dict = None) -> bool:
 def _summarize_state(state: dict) -> str:
     lines = []
 
-    if "clients" in state and state["clients"]:
-        lines.append(f"Clientes: {len(state['clients'])} registrado(s)")
-    else:
-        lines.append("Clientes: nenhum")
-
-    tasks = state.get("tasks", {})
-    if tasks:
-        pending = sum(1 for t in tasks.values() if isinstance(t, dict) and t.get("status") == "pending")
-        ready = sum(1 for t in tasks.values() if isinstance(t, dict) and t.get("status") == "ready")
-        done = sum(1 for t in tasks.values() if isinstance(t, dict) and t.get("status") in ("done", "complete"))
-        lines.append(f"Tarefas: {len(tasks)} ({pending} pendente(s), {ready} pronta(s), {done} concluida(s))")
-    else:
-        lines.append("Tarefas: nenhuma")
-
-    modules = state.get("modules", {})
-    active = [k for k, v in modules.items() if isinstance(v, dict) and v.get("status") == "active"]
-    if active:
-        lines.append(f"Modulos ativos: {', '.join(active)}")
-    else:
-        lines.append("Modulos: nenhum modulo especialista contratado")
-
     integrations = state.get("integrations", {})
     for name, info in integrations.items():
         if isinstance(info, dict):
             lines.append(f"  {name}: {info.get('status', 'unknown')}")
 
-    # Pending actions
     pending_actions = [a for a in state.get("pending_actions", []) if a.get("status") in ("pending", "pending_approval", "approved")]
     if pending_actions:
         lines.append(f"Acoes pendentes: {len(pending_actions)}")
 
-    # Pending intentions
     pending_intentions = [i for i in state.get("intentions", []) if i.get("status") in ("pending", "ambiguous")]
     if pending_intentions:
         lines.append(f"Intencoes pendentes: {len(pending_intentions)}")
@@ -476,30 +426,23 @@ def _summarize_state(state: dict) -> str:
     if ambiguous_intentions:
         lines.append(f"Intencoes ambíguas: {len(ambiguous_intentions)}")
 
-    # Results
     results = state.get("results", {})
     recent_results = {k: v for k, v in results.items() if v.get("status")}
     if recent_results:
         lines.append(f"Resultados recentes: {len(recent_results)}")
 
-    # Crons
-    crons = state.get("crons", {})
-    if crons:
-        lines.append(f"Crons: {len(crons)} configurado(s)")
-
-    # LLM
-    llm = state.get("llm", {})
-    if llm.get("current_model"):
-        lines.append(f"Modelo atual: {llm['current_model']}")
-
-    # Audit
-    if state.get("ahri", {}).get("audit_mode"):
-        lines.append(f"MODO AUDITORIA ATIVO — escopo: {state['ahri'].get('audit_scope', 'geral')}")
+    if state.get("ahri_runtime", {}).get("audit_mode"):
+        lines.append(f"MODO AUDITORIA ATIVO — escopo: {state['ahri_runtime'].get('audit_scope', 'geral')}")
 
     return "\n".join(lines)
 
 
 def _get_memory_context() -> str:
+    try:
+        from memory_sessions import get_recent_context
+        return get_recent_context()
+    except ImportError:
+        pass
     try:
         from ahri_memory import get_context_for_session
         return get_context_for_session()
@@ -508,7 +451,6 @@ def _get_memory_context() -> str:
 
 
 def _extract_intentions(response: str) -> list:
-    """Extract INTENTION: markers from Ahri's response. Returns list of intention texts."""
     intentions = []
     for line in response.split("\n"):
         line = line.strip()
@@ -520,9 +462,23 @@ def _extract_intentions(response: str) -> list:
 
 
 def _strip_intentions(response: str) -> str:
-    """Remove INTENTION: markers from response before showing to user."""
     lines = []
     for line in response.split("\n"):
         if not line.strip().startswith("INTENTION:"):
             lines.append(line)
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Telegram poll cycle (called by scheduler)
+# ---------------------------------------------------------------------------
+
+_last_update_id = 0
+
+
+def telegram_poll_cycle():
+    global _last_update_id
+    updates = telegram_get_updates(offset=_last_update_id + 1)
+    for update in updates:
+        _last_update_id = update.get("update_id", _last_update_id)
+        handle_telegram_update(update)

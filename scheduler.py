@@ -2,51 +2,87 @@ import os
 import sys
 import json
 import time
-import urllib.request
-from datetime import datetime, timedelta
+import importlib
+from datetime import datetime
 from pathlib import Path
 
 ROOT = str(Path(__file__).parent)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from state import read_state, write_state, merge_state
-from executor import create_action, approve_action, executor_cycle
-from agents.ahri import (
-    send_notification, check_upcoming_events,
-    check_integration_health, check_overdue_tasks,
-    telegram_send, telegram_get_updates, handle_telegram_update,
-    is_audit_active, stop_audit,
-)
-from intent_resolver import intent_resolver_cycle
+from state import read_state, write_state
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
-
-
 # ---------------------------------------------------------------------------
-# Cron definitions
+# Cron registry — discovered from state, not hardcoded
 # ---------------------------------------------------------------------------
+
+DEFAULT_CRONS = {
+    "executor": {
+        "interval_seconds": 10,
+        "module": "executor",
+        "function": "executor_cycle",
+        "status": "active",
+    },
+    "intent_resolver": {
+        "interval_seconds": 5,
+        "module": "intent_resolver",
+        "function": "intent_resolver_cycle",
+        "status": "active",
+    },
+    "telegram_poll": {
+        "interval_seconds": 5,
+        "module": "agents.ahri",
+        "function": "telegram_poll_cycle",
+        "status": "active",
+    },
+    "audit_check": {
+        "interval_seconds": 60,
+        "module": "agents.ahri",
+        "function": "audit_expiry_check",
+        "status": "active",
+    },
+    "calendar_check": {
+        "interval_seconds": 300,
+        "module": "agents.ahri",
+        "function": "check_upcoming_events",
+        "status": "active",
+    },
+    "integration_health": {
+        "interval_seconds": 600,
+        "module": "agents.ahri",
+        "function": "check_integration_health",
+        "status": "active",
+    },
+    "overdue_tasks": {
+        "interval_seconds": 900,
+        "module": "agents.ahri",
+        "function": "check_overdue_tasks",
+        "status": "active",
+    },
+    "proactivity_digest": {
+        "interval_seconds": 1800,
+        "module": "scheduler",
+        "function": "flush_digest",
+        "status": "active",
+    },
+    "extraction": {
+        "interval_seconds": 300,
+        "module": "extraction",
+        "function": "extraction_cycle",
+        "status": "active",
+    },
+}
+
 
 def _register_default_crons():
     state = read_state()
-    crons = state.setdefault("crons", {})
-
-    defaults = {
-        "executor": {"interval_seconds": 10, "function": "executor_cycle", "status": "active"},
-        "intent_resolver": {"interval_seconds": 5, "function": "intent_resolver_cycle", "status": "active"},
-        "calendar_check": {"interval_seconds": 300, "function": "check_upcoming_events", "status": "active"},
-        "integration_health": {"interval_seconds": 600, "function": "check_integration_health", "status": "active"},
-        "overdue_tasks": {"interval_seconds": 900, "function": "check_overdue_tasks", "status": "active"},
-        "telegram_poll": {"interval_seconds": 5, "function": "telegram_poll_cycle", "status": "active"},
-        "audit_check": {"interval_seconds": 60, "function": "audit_expiry_check", "status": "active"},
-        "proactivity_digest": {"interval_seconds": 1800, "function": "flush_digest", "status": "active"},
-    }
+    crons = state.setdefault("cron_runtime", {})
 
     changed = False
-    for name, config in defaults.items():
+    for name, config in DEFAULT_CRONS.items():
         if name not in crons:
             crons[name] = {**config, "last_run_at": "", "run_count": 0}
             changed = True
@@ -71,114 +107,38 @@ def _should_run(cron_name: str, interval_seconds: int) -> bool:
     return False
 
 
-def _update_cron_state(cron_name: str):
+def _update_cron_runtime(cron_name: str):
     state = read_state()
-    cron = state.get("crons", {}).get(cron_name, {})
+    cron = state.get("cron_runtime", {}).get(cron_name, {})
     cron["last_run_at"] = datetime.now().isoformat()
     cron["run_count"] = cron.get("run_count", 0) + 1
     write_state(state, agent="scheduler", reason=f"cron_{cron_name}")
 
 
-# ---------------------------------------------------------------------------
-# Cron functions
-# ---------------------------------------------------------------------------
-
-def cron_executor_cycle():
-    if _should_run("executor", 10):
-        try:
-            executor_cycle()
-        except Exception as e:
-            pass
-        _update_cron_state("executor")
-
-
-def cron_intent_resolver():
-    if _should_run("intent_resolver", 5):
-        try:
-            intent_resolver_cycle()
-        except Exception:
-            pass
-        _update_cron_state("intent_resolver")
-
-
-def cron_calendar_check():
-    if _should_run("calendar_check", 300):
-        try:
-            check_upcoming_events()
-        except Exception:
-            pass
-        _update_cron_state("calendar_check")
-
-
-def cron_integration_health():
-    if _should_run("integration_health", 600):
-        try:
-            check_integration_health()
-        except Exception:
-            pass
-        _update_cron_state("integration_health")
-
-
-def cron_overdue_tasks():
-    if _should_run("overdue_tasks", 900):
-        try:
-            check_overdue_tasks()
-        except Exception:
-            pass
-        _update_cron_state("overdue_tasks")
-
-
-def cron_telegram_poll():
-    if _should_run("telegram_poll", 5):
-        try:
-            telegram_poll_cycle()
-        except Exception:
-            pass
-        _update_cron_state("telegram_poll")
-
-
-def cron_audit_check():
-    if _should_run("audit_check", 60):
-        try:
-            audit_expiry_check()
-        except Exception:
-            pass
-        _update_cron_state("audit_check")
-
-
-def cron_proactivity_digest():
-    if _should_run("proactivity_digest", 1800):
-        try:
-            flush_digest()
-        except Exception:
-            pass
-        _update_cron_state("proactivity_digest")
+def _run_cron_function(module_name: str, function_name: str):
+    try:
+        mod = importlib.import_module(module_name)
+        fn = getattr(mod, function_name)
+        fn()
+    except Exception as e:
+        pass
 
 
 # ---------------------------------------------------------------------------
-# Implementation functions
+# Built-in scheduler functions
 # ---------------------------------------------------------------------------
-
-_last_update_id = 0
-
-
-def telegram_poll_cycle():
-    global _last_update_id
-    updates = telegram_get_updates(offset=_last_update_id + 1)
-    for update in updates:
-        _last_update_id = update.get("update_id", _last_update_id)
-        handle_telegram_update(update)
-
 
 def audit_expiry_check():
+    from agents.ahri import is_audit_active, send_notification
     state = read_state()
-    if state.get("ahri", {}).get("audit_mode"):
+    if state.get("ahri_runtime", {}).get("audit_mode"):
         if is_audit_active(state):
             return
         send_notification("Modo auditoria expirou. Voltando ao normal.", priority="normal")
 
 
 def flush_digest():
+    from agents.ahri import telegram_send
     state = read_state()
     digest = state.get("proactivity", {}).get("pending_digest", [])
     if not digest:
@@ -187,28 +147,89 @@ def flush_digest():
     msg = f"Atualizacoes acumuladas ({len(digest)}):\n" + "\n".join(f"- {d}" for d in digest[:5])
     telegram_send(msg)
 
+    state = read_state()
     state.setdefault("proactivity", {})["pending_digest"] = []
     write_state(state, agent="scheduler", reason="digest_flushed")
 
 
+def check_upcoming_events():
+    from executor import create_action
+    create_action("calendar_today", source="ahri_proactive", priority="alta")
+
+
+def check_integration_health():
+    from executor import create_action
+    from tools.registry import get_tool
+    for tool_name in ("trello_test", "supabase_health"):
+        if get_tool(tool_name):
+            try:
+                create_action(tool_name, source="ahri_proactive", priority="normal")
+            except Exception:
+                pass
+
+
+def check_overdue_tasks():
+    try:
+        from memory_context import read_context
+        tasks = read_context("tasks")
+    except ImportError:
+        return
+
+    if not tasks or not isinstance(tasks, dict):
+        return
+
+    overdue = []
+    now = datetime.now()
+    for task_id, task in tasks.items():
+        if not isinstance(task, dict):
+            continue
+        due = task.get("due_time") or task.get("due_date")
+        if due and task.get("status") not in ("done", "complete"):
+            try:
+                if datetime.fromisoformat(due) < now:
+                    overdue.append({"id": task_id, "due": due})
+            except (ValueError, TypeError):
+                pass
+
+    if overdue:
+        from agents.ahri import send_notification
+        msg = f"Chefe, {len(overdue)} tarefa(s) vencida(s): " + ", ".join(t["id"] for t in overdue)
+        send_notification(msg, priority="alta")
+
+
 # ---------------------------------------------------------------------------
-# Main loop
+# Main loop — discovers and runs crons dynamically from state
 # ---------------------------------------------------------------------------
 
 def run():
     _register_default_crons()
     print("OpenClaw Scheduler rodando... (Ctrl+C para parar)")
-    print("Crons ativos: executor(10s), intent_resolver(5s), telegram(5s), calendar(5min), health(10min), tasks(15min), digest(30min)")
+
+    state = read_state()
+    active_crons = {k: v for k, v in state.get("cron_runtime", {}).items() if v.get("status") == "active"}
+    names = ", ".join(f"{k}({v.get('interval_seconds', '?')}s)" for k, v in active_crons.items())
+    print(f"Crons ativos: {names}")
 
     while True:
-        cron_executor_cycle()
-        cron_intent_resolver()
-        cron_telegram_poll()
-        cron_audit_check()
-        cron_calendar_check()
-        cron_integration_health()
-        cron_overdue_tasks()
-        cron_proactivity_digest()
+        state = read_state()
+        crons = state.get("cron_runtime", {})
+
+        for cron_name, cron_config in crons.items():
+            if cron_config.get("status") != "active":
+                continue
+
+            interval = cron_config.get("interval_seconds", 60)
+            if not _should_run(cron_name, interval):
+                continue
+
+            module_name = cron_config.get("module", "")
+            function_name = cron_config.get("function", "")
+
+            if module_name and function_name:
+                _run_cron_function(module_name, function_name)
+
+            _update_cron_runtime(cron_name)
+
         time.sleep(1)
 
 

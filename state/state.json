@@ -1,77 +1,13 @@
 {
   "meta": {
     "last_updated": "",
-    "version": "2.0.0",
-    "last_written_by": "test",
-    "last_written_reason": "cleanup",
-    "last_written_at": "2026-04-19T23:37:06.939723"
+    "version": "3.0.0",
+    "last_written_by": "system",
+    "last_written_reason": "state_cleanup_v3",
+    "last_written_at": ""
   },
-  "clients": {},
-  "tasks": {},
-  "modules": {},
-  "crons": {},
-  "llm": {
-    "current_model": "gpt-4o-mini",
-    "current_provider": "openrouter",
-    "agent_model": "gpt-4o-mini",
-    "available_models": []
-  },
-  "ahri": {
-    "last_interaction": "",
-    "current_context": "",
-    "audit_mode": false,
-    "audit_scope": null,
-    "audit_expires_at": null,
-    "conversation_history": [],
-    "auto_approved_patterns": [
-      {
-        "tool": "gmail_list",
-        "params": {}
-      },
-      {
-        "tool": "calendar_today",
-        "params": {}
-      },
-      {
-        "tool": "calendar_list",
-        "params": {}
-      },
-      {
-        "tool": "drive_list",
-        "params": {}
-      },
-      {
-        "tool": "trello_get_boards",
-        "params": {}
-      },
-      {
-        "tool": "trello_get_lists",
-        "params": {}
-      },
-      {
-        "tool": "trello_get_cards",
-        "params": {}
-      },
-      {
-        "tool": "trello_get_labels",
-        "params": {}
-      },
-      {
-        "tool": "trello_test",
-        "params": {}
-      },
-      {
-        "tool": "supabase_select",
-        "params": {}
-      },
-      {
-        "tool": "supabase_health",
-        "params": {}
-      }
-    ]
-  },
-  "intentions": [],
   "pending_actions": [],
+  "intentions": [],
   "results": {},
   "calendar_sync": {
     "last_check": "",
@@ -97,5 +33,11 @@
     "telegram": {
       "status": "unknown"
     }
-  }
+  },
+  "ahri_runtime": {
+    "audit_mode": false,
+    "audit_scope": null,
+    "audit_expires_at": null
+  },
+  "cron_runtime": {}
 }

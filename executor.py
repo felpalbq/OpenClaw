@@ -11,7 +11,7 @@ ROOT = str(Path(__file__).parent)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from state import read_state, write_state, merge_state
+from state import read_state, write_state
 from tools.registry import TOOL_REGISTRY, get_tool
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -77,25 +77,6 @@ def _execute_tool(tool_name: str, params: dict) -> dict:
         return {"status": "error", "data": None, "error": str(e)}
 
 
-def _check_calendar_sync(action: dict, state: dict) -> bool:
-    tool_name = action.get("tool", "")
-    params = action.get("params", {})
-    has_due_time = False
-
-    if tool_name in ("trello_create_card", "supabase_insert"):
-        desc = params.get("description", "")
-        brief = params.get("data", {})
-        if isinstance(brief, dict):
-            has_due_time = bool(brief.get("due_time") or brief.get("due_date"))
-
-    if not has_due_time:
-        return True
-
-    cal_sync = state.get("calendar_sync", {})
-    task_id = action.get("id", "")
-    return task_id in cal_sync.get("synced_task_ids", [])
-
-
 def executor_cycle():
     state = read_state()
     actions = state.get("pending_actions", [])
@@ -144,22 +125,6 @@ def executor_cycle():
                 changed = True
                 continue
 
-            # Calendar enforcement
-            if not _check_calendar_sync(action, state):
-                action["status"] = "failed"
-                action["retry_count"] = action.get("retry_count", 0) + 1
-                result_id = action.get("result_ref", f"res_{action['id']}")
-                results[result_id] = {
-                    "action_id": action["id"],
-                    "status": "error",
-                    "data": None,
-                    "error": "calendar_sync_required",
-                    "executed_at": _now(),
-                    "execution_time_ms": 0,
-                }
-                changed = True
-                continue
-
             action["status"] = "running"
             action["executed_at"] = _now()
             changed = True
@@ -193,24 +158,21 @@ def executor_cycle():
 
         if action.get("status") == "failed" and action.get("retry_count", 0) >= action.get("max_retries", 3):
             action["status"] = "failed_permanent"
-            # Notify Ahri
-            state.setdefault("pending_actions", []).append({
-                "id": f"notify_ahri_{action['id']}",
+            # Notify Ahri via state (register intention)
+            state.setdefault("intentions", []).append({
+                "id": f"int_{uuid.uuid4().hex[:8]}",
+                "text": f"Notificar: acao {action['id']} ({action.get('tool')}) falhou permanentemente",
                 "source": "executor",
-                "tool": "ahri_notify",
-                "params": {"message": f"Acao {action['id']} ({action.get('tool')}) falhou permanentemente: {results.get(action.get('result_ref', ''), {}).get('error', 'unknown')}"},
                 "status": "pending",
-                "requires_approval": False,
                 "created_at": _now(),
-                "priority": "alta",
             })
+            changed = True
 
     # Cleanup old completed actions
     still_active = []
     for action in actions:
         if action.get("status") in ("done", "rejected", "expired", "failed_permanent"):
             if _is_old_completed(action):
-                # Remove result too
                 rid = action.get("result_ref", "")
                 results.pop(rid, None)
                 continue
@@ -251,7 +213,7 @@ def create_action(tool_name: str, params: dict = None,
         "retry_count": 0,
         "max_retries": 3,
         "timeout_seconds": 30,
-        "approval_expires_at": (_now() if requires_approval else None),
+        "approval_expires_at": None,
         "priority": priority,
     }
 

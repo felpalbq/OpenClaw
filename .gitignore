@@ -4,7 +4,6 @@ __pycache__/
 .env
 identity/
 *.sqlite
-sessions/
 logs/
 cache/
 tmp/
@@ -25,3 +24,9 @@ devices/
 flows/
 tasks/
 update-check.json
+
+# Local ahri_memory (sessions and interactions are in ahri/ repo now)
+ahri_memory/interactions/
+ahri_memory/__pycache__/
+ahri_memory/clients/
+ahri_memory/patterns/

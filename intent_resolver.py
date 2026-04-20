@@ -11,14 +11,13 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from state import read_state, write_state
-from executor import create_action
 from tools.registry import TOOL_REGISTRY, get_tool
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 # ---------------------------------------------------------------------------
-# LLM config (reuses same env as Ahri)
+# LLM config
 # ---------------------------------------------------------------------------
 
 RESOLVER_API_KEY = os.environ.get("LLM_API_KEY") or os.environ.get("OPENROUTER_API_KEY", "")
@@ -88,7 +87,6 @@ def _build_tools_catalog() -> str:
 
 def _parse_resolver_response(raw: str) -> dict:
     raw = raw.strip()
-    # Try to extract JSON from response (may have markdown wrapping)
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:
@@ -123,7 +121,7 @@ def resolve_intention(intention: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Cycle: process all pending intentions
+# Cycle: process all pending intentions from state
 # ---------------------------------------------------------------------------
 
 def intent_resolver_cycle():
@@ -174,9 +172,10 @@ def intent_resolver_cycle():
             changed = True
             continue
 
-        # High/medium confidence — create action
+        # High/medium confidence — create action in state
         params = result.get("params", {})
         try:
+            from executor import create_action
             action_id = create_action(tool_name, params=params, source="intent_resolver")
             intention["status"] = "resolved"
             intention["resolved_at"] = datetime.now().isoformat()
@@ -211,33 +210,8 @@ def intent_resolver_cycle():
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers (used by other modules via state, not direct import)
 # ---------------------------------------------------------------------------
-
-def register_intention(text: str, source: str = "ahri", context: dict = None) -> str:
-    intention_id = f"int_{uuid.uuid4().hex[:8]}"
-    intention = {
-        "id": intention_id,
-        "text": text,
-        "source": source,
-        "status": "pending",
-        "created_at": datetime.now().isoformat(),
-        "resolved_at": None,
-        "resolved_action_id": None,
-        "ambiguity": None,
-        "candidates": [],
-        "confidence": None,
-        "resolution_reason": None,
-    }
-    if context:
-        intention["context"] = context
-
-    state = read_state()
-    state.setdefault("intentions", []).append(intention)
-    write_state(state, agent=source, reason=f"intention_registered_{intention_id}")
-
-    return intention_id
-
 
 def get_ambiguous_intentions() -> list:
     state = read_state()
@@ -252,6 +226,7 @@ def resolve_ambiguity(intention_id: str, chosen_tool: str, params: dict = None) 
             if not tool_def:
                 return f"Tool nao encontrada: {chosen_tool}"
 
+            from executor import create_action
             action_id = create_action(chosen_tool, params=params or {}, source="intent_resolver")
             intention["status"] = "resolved"
             intention["resolved_at"] = datetime.now().isoformat()
