@@ -510,7 +510,7 @@ def validate_level_7():
 
     required_sections = [
         "meta", "clients", "tasks", "modules", "crons", "llm",
-        "ahri", "pending_actions", "results", "calendar_sync",
+        "ahri", "intentions", "pending_actions", "results", "calendar_sync",
         "proactivity", "integrations"
     ]
 

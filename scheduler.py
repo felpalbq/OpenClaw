@@ -18,6 +18,7 @@ from agents.ahri import (
     telegram_send, telegram_get_updates, handle_telegram_update,
     is_audit_active, stop_audit,
 )
+from intent_resolver import intent_resolver_cycle
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -35,6 +36,7 @@ def _register_default_crons():
 
     defaults = {
         "executor": {"interval_seconds": 10, "function": "executor_cycle", "status": "active"},
+        "intent_resolver": {"interval_seconds": 5, "function": "intent_resolver_cycle", "status": "active"},
         "calendar_check": {"interval_seconds": 300, "function": "check_upcoming_events", "status": "active"},
         "integration_health": {"interval_seconds": 600, "function": "check_integration_health", "status": "active"},
         "overdue_tasks": {"interval_seconds": 900, "function": "check_overdue_tasks", "status": "active"},
@@ -88,6 +90,15 @@ def cron_executor_cycle():
         except Exception as e:
             pass
         _update_cron_state("executor")
+
+
+def cron_intent_resolver():
+    if _should_run("intent_resolver", 5):
+        try:
+            intent_resolver_cycle()
+        except Exception:
+            pass
+        _update_cron_state("intent_resolver")
 
 
 def cron_calendar_check():
@@ -187,10 +198,11 @@ def flush_digest():
 def run():
     _register_default_crons()
     print("OpenClaw Scheduler rodando... (Ctrl+C para parar)")
-    print("Crons ativos: executor(10s), telegram(5s), calendar(5min), health(10min), tasks(15min), digest(30min)")
+    print("Crons ativos: executor(10s), intent_resolver(5s), telegram(5s), calendar(5min), health(10min), tasks(15min), digest(30min)")
 
     while True:
         cron_executor_cycle()
+        cron_intent_resolver()
         cron_telegram_poll()
         cron_audit_check()
         cron_calendar_check()

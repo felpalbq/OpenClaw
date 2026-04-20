@@ -4,7 +4,7 @@
 
 ## Visão Geral
 
-O OpenClaw tem 3 camadas, cada uma com responsabilidade e ciclo de vida distintos. Não existe pipeline entre elas. O estado é o mediador.
+O OpenClaw tem 4 camadas, cada uma com responsabilidade e ciclo de vida distintos. Não existe pipeline entre elas. O estado é o mediador.
 
 ---
 
@@ -30,6 +30,41 @@ O OpenClaw tem 3 camadas, cada uma com responsabilidade e ciclo de vida distinto
 - `style_XX_<name>/LAYOUT.md` — canvas, grid, estrutura visual
 - `style_XX_<name>/CONTENT_STRUCTURE.md` — blocos, organização
 - `style_XX_<name>/CONTENT_RENDERING.md` — linhas visuais, espaçamento
+
+---
+
+## INTENÇÃO — Intent Layer
+
+**Natureza:** transitória, linguagem natural, mediadora entre interpretação e execução
+**Localização:** `state.intentions` (campo no estado)
+**Persistência:** disco local (JSON, parte do estado)
+
+### Regras
+
+- Intenções são registradas pela Ahri em linguagem natural — nunca estruturadas
+- Intent_resolver traduz intenções para ações estruturadas (tool + params)
+- Intenções ambíguas ficam em status `ambiguous` — Ahri pede clarificação ao usuário
+- Intenções irresolvíveis ficam em status `unresolvable`
+- Intenções resolvidas vinculam-se à ação criada via `resolved_action_id`
+- Cleanup automático após 1 hora para intenções terminais
+
+### Ciclo
+
+```
+Ahri (interpreta) → state.intentions (NL) → intent_resolver (traduz + valida) → state.pending_actions (estruturado) → executor
+```
+
+### Comportamento correto:
+
+- Ahri detecta intenção operacional → registra texto natural em intentions
+- Intent_resolver lê intenção → mapeia para tool → valida → cria pending_action
+- Intent_resolver incerto → marca como ambiguous → Ahri pergunta ao Chefe
+
+### Comportamento incorreto:
+
+- Ahri estrutura a ação (escolhe tool, monta params) — isso é papel do intent_resolver
+- Intent_resolver executa a ação — ele só traduz, o executor executa
+- Ahri chama ferramentas diretamente — Ahri altera estado, não executa
 
 ---
 
@@ -87,18 +122,26 @@ Não existe pipeline. O fluxo é:
 ```
 Estado ← → Agentes (crons verificam condições, agem, escrevem resultado)
    ↑↓
-  Ahri (lê estado, conversa com Chefe, altera estado quando intencional)
+  Ahri (lê estado, conversa com Chefe, registra intenção quando operacional)
+   ↓
+  state.intentions (linguagem natural)
+   ↓
+  Intent Resolver (traduz intenção → ação estruturada, valida contra registry)
+   ↓
+  state.pending_actions (estruturado)
+   ↓
+  Executor (executa, escreve resultado)
 ```
 
-Não há setas entre agentes. Não há sequência. Há um campo compartilhado — o estado — e agentes que operam sobre ele quando podem.
+Não há setas entre agentes. Não há sequência. Há um campo compartilhado — o estado — e componentes que operam sobre ele quando podem.
 
 ### Comportamento correto:
 
-- Architect age → escreve estratégia no estado. Writer verifica → vê estratégia → age. Nenhum chamou o outro.
+- Ahri detecta intenção → registra em intentions. Intent_resolver traduz → cria pending_action. Executor executa. Nenhum chamou o outro.
 
 ### Comportamento incorreto:
 
-- Input → Interpreter → Decider → Generator → Quality → Response. Isso é pipeline. Não é como o sistema funciona (P1).
+- Ahri → ACTION:tool|params → pending_action → executor. Isso é pipeline + Ahri como parser. Não é como o sistema funciona.
 
 ---
 
@@ -107,5 +150,6 @@ Não há setas entre agentes. Não há sequência. Há um campo compartilhado �
 | Camada | O quê | Onde | Ciclo de vida |
 |---|---|---|---|
 | **Comportamento** | Layouts, constraints, estilos | `workspace/layouts/` | Git (código) |
+| **Intenção** | Tradução NL → ação estruturada | `state.intentions` + `intent_resolver.py` | Transitório (1h) |
 | **Estado** | Hub contínuo — clientes, conteúdo, tarefas, distribuições | `state/state.json` | Persistente |
 | **Estratégia** | Aprendizado, histórico, adaptação | Futuro | Permanente + versionado |

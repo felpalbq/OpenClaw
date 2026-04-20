@@ -11,6 +11,7 @@ if ROOT not in sys.path:
 
 from state import read_state, write_state, merge_state
 from executor import create_action, get_action_result, get_pending_approvals
+from intent_resolver import register_intention, get_ambiguous_intentions, resolve_ambiguity
 from tools.registry import TOOL_REGISTRY, get_tool
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -30,18 +31,23 @@ Voce e a assistente pessoal do Felipe. Responde com base no estado real do siste
 Regras:
 - Nunca invente dados. Se nao ha informacao no estado, diga que nao tem.
 - Responda em portugues brasileiro, de forma direta e util.
-- Se o usuario pedir algo que requer uma tool, voce PROPOE a acao. Nao executa.
-- Para acoes de leitura (listar emails, ver agenda), responda normalmente apos os resultados.
-- Para acoes de escrita (criar card, enviar email), informe que precisa de autorizacao.
-- Sempre que possivel, aja: nao so informe, proponha acao.
+- Quando o Chefe pedir algo operacional (que envolva tools do sistema), voce IDENTIFICA a intenção e responde naturalmente. Nao use comandos estruturados.
+- Para acoes de leitura (listar emails, ver agenda), responda que vai verificar.
+- Para acoes de escrita (criar card, enviar email), informe que vai registrar e precisa de autorizacao.
+- Sempre que possivel, aja: nao so informe, identifique intenção operacional.
 - Voce pode ser proativa: alertar sobre eventos proximos, falhas, tarefas vencidas.
 - Maximo 2 observacoes proativas por interacao.
 
-Formato para propor acao:
-ACTION:nome_da_tool|param1=val1,param2=val2
+Quando identificar uma intenção operacional do Chefe, inclua no formato:
+INTENTION:descricao natural da intenção em linguagem simples
 
-Para acoes de leitura, execute direto.
-Para acoes de escrita, pergunte se o Chefe aprova.
+Exemplos:
+- Chefe: "Verifica meu email" → responda naturalmente + INTENTION:verificar emails recentes
+- Chefe: "Cria um card no Trello sobre X" → responda que vai registrar + INTENTION:criar card no Trello sobre X
+- Chefe: "Manda email pro cliente" → INTENTION:enviar email para o cliente
+
+Nao estruture a acao. Nao escolha tools. Nao monte parametros. So descreva a intenção.
+O sistema resolve a intenção separadamente.
 """
 
 # ---------------------------------------------------------------------------
@@ -272,18 +278,27 @@ def ask(question: str, state: dict = None) -> str:
     _add_to_history(state, "user", question)
     _add_to_history(state, "assistant", response)
 
-    # Parse ACTION directives from response
-    actions = _parse_actions(response)
+    # Extract intentions and register in state (natural language, not structured)
+    intentions = _extract_intentions(response)
 
-    for tool_name, params in actions:
-        tool_def = get_tool(tool_name)
-        if tool_def:
-            try:
-                act_id = create_action(tool_name, params=params, source="ahri")
-                if tool_def["requires_approval"]:
-                    response += f"\n\nAcao criada: {act_id} — aguardando sua aprovacao."
-            except ValueError:
-                pass
+    for intention_text in intentions:
+        try:
+            int_id = register_intention(intention_text, source="ahri", context={"question": question[:200]})
+        except Exception:
+            pass
+
+    # Clean response before showing to user
+    response = _strip_intentions(response)
+
+    # Check for ambiguous intentions that need user clarification
+    ambiguous = get_ambiguous_intentions()
+    for amb in ambiguous:
+        candidates = amb.get("candidates", [])
+        amb_text = amb.get("ambiguity", "")
+        if candidates:
+            response += f"\n\nPreciso esclarecer: {amb_text}. Opcoes: {', '.join(candidates)}. Qual voce quer?"
+        else:
+            response += f"\n\nNao consegui entender exatamente: {amb_text}. Pode ser mais especifico?"
 
     # Update state
     state.setdefault("ahri", {})
@@ -321,6 +336,8 @@ def ask_for_result(action_id: str) -> str:
 
 
 def propose_action(tool_name: str, params: dict = None, priority: str = "normal") -> str:
+    """Direct action creation for programmatic use (proactive checks, etc.).
+    For user intents, use register_intention() instead."""
     tool_def = get_tool(tool_name)
     if not tool_def:
         return f"Tool nao encontrada: {tool_name}"
@@ -451,6 +468,14 @@ def _summarize_state(state: dict) -> str:
     if pending_actions:
         lines.append(f"Acoes pendentes: {len(pending_actions)}")
 
+    # Pending intentions
+    pending_intentions = [i for i in state.get("intentions", []) if i.get("status") in ("pending", "ambiguous")]
+    if pending_intentions:
+        lines.append(f"Intencoes pendentes: {len(pending_intentions)}")
+    ambiguous_intentions = [i for i in state.get("intentions", []) if i.get("status") == "ambiguous"]
+    if ambiguous_intentions:
+        lines.append(f"Intencoes ambíguas: {len(ambiguous_intentions)}")
+
     # Results
     results = state.get("results", {})
     recent_results = {k: v for k, v in results.items() if v.get("status")}
@@ -482,18 +507,22 @@ def _get_memory_context() -> str:
         return ""
 
 
-def _parse_actions(response: str) -> list:
-    actions = []
+def _extract_intentions(response: str) -> list:
+    """Extract INTENTION: markers from Ahri's response. Returns list of intention texts."""
+    intentions = []
     for line in response.split("\n"):
         line = line.strip()
-        if line.startswith("ACTION:"):
-            parts = line[7:].split("|", 1)
-            tool_name = parts[0].strip()
-            params = {}
-            if len(parts) > 1:
-                for pair in parts[1].split(","):
-                    if "=" in pair:
-                        k, v = pair.split("=", 1)
-                        params[k.strip()] = v.strip()
-            actions.append((tool_name, params))
-    return actions
+        if line.startswith("INTENTION:"):
+            intention_text = line[10:].strip()
+            if intention_text:
+                intentions.append(intention_text)
+    return intentions
+
+
+def _strip_intentions(response: str) -> str:
+    """Remove INTENTION: markers from response before showing to user."""
+    lines = []
+    for line in response.split("\n"):
+        if not line.strip().startswith("INTENTION:"):
+            lines.append(line)
+    return "\n".join(lines)
