@@ -1,17 +1,87 @@
 {
   "meta": {
     "last_updated": "",
-    "version": "1.0.0",
-    "last_written_by": "ahri",
-    "last_written_reason": "interaction",
-    "last_written_at": "2026-04-19T22:31:19.148800"
+    "version": "2.0.0",
+    "last_written_by": "test",
+    "last_written_reason": "cleanup",
+    "last_written_at": "2026-04-19T23:37:06.939723"
   },
   "clients": {},
   "tasks": {},
   "modules": {},
+  "crons": {},
+  "llm": {
+    "current_model": "gpt-4o-mini",
+    "current_provider": "openrouter",
+    "agent_model": "gpt-4o-mini",
+    "available_models": []
+  },
   "ahri": {
-    "last_interaction": "2026-04-19T22:31:19.148769",
-    "current_context": "O que voce pode fazer?"
+    "last_interaction": "",
+    "current_context": "",
+    "audit_mode": false,
+    "audit_scope": null,
+    "audit_expires_at": null,
+    "conversation_history": [],
+    "auto_approved_patterns": [
+      {
+        "tool": "gmail_list",
+        "params": {}
+      },
+      {
+        "tool": "calendar_today",
+        "params": {}
+      },
+      {
+        "tool": "calendar_list",
+        "params": {}
+      },
+      {
+        "tool": "drive_list",
+        "params": {}
+      },
+      {
+        "tool": "trello_get_boards",
+        "params": {}
+      },
+      {
+        "tool": "trello_get_lists",
+        "params": {}
+      },
+      {
+        "tool": "trello_get_cards",
+        "params": {}
+      },
+      {
+        "tool": "trello_get_labels",
+        "params": {}
+      },
+      {
+        "tool": "trello_test",
+        "params": {}
+      },
+      {
+        "tool": "supabase_select",
+        "params": {}
+      },
+      {
+        "tool": "supabase_health",
+        "params": {}
+      }
+    ]
+  },
+  "pending_actions": [],
+  "results": {},
+  "calendar_sync": {
+    "last_check": "",
+    "synced_task_ids": [],
+    "unsynced": []
+  },
+  "proactivity": {
+    "last_notification_at": "",
+    "last_critical_at": "",
+    "last_high_at": "",
+    "pending_digest": []
   },
   "integrations": {
     "google": {

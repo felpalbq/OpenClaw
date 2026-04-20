@@ -76,8 +76,22 @@ def inject():
     # Garantir seções base (modules, ahri, integrations)
     if "modules" not in state:
         state["modules"] = {}
+    if "crons" not in state:
+        state["crons"] = {}
+    if "llm" not in state:
+        state["llm"] = {
+            "current_model": "gpt-4o-mini",
+            "current_provider": "openrouter",
+            "agent_model": "gpt-4o-mini",
+            "available_models": [],
+        }
     if "ahri" not in state:
         state["ahri"] = {"last_interaction": "", "current_context": ""}
+    state["ahri"].setdefault("audit_mode", False)
+    state["ahri"].setdefault("audit_scope", None)
+    state["ahri"].setdefault("audit_expires_at", None)
+    state["ahri"].setdefault("conversation_history", [])
+    state["ahri"].setdefault("auto_approved_patterns", [])
     if "integrations" not in state:
         state["integrations"] = {
             "google": {"status": "unknown"},
@@ -85,7 +99,15 @@ def inject():
             "supabase": {"status": "unknown"},
             "telegram": {"status": "unknown"}
         }
-    print(f"  [OK] Seções base do estado garantidas (modules, ahri, integrations)")
+    if "pending_actions" not in state:
+        state["pending_actions"] = []
+    if "results" not in state:
+        state["results"] = {}
+    if "calendar_sync" not in state:
+        state["calendar_sync"] = {"last_check": "", "synced_task_ids": [], "unsynced": []}
+    if "proactivity" not in state:
+        state["proactivity"] = {"last_notification_at": "", "last_critical_at": "", "last_high_at": "", "pending_digest": []}
+    print(f"  [OK] Seções base do estado garantidas (schema v2.0.0)")
 
     # Marcar que dados de teste foram injetados
     if "meta" not in state:

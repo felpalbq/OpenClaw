@@ -12,6 +12,8 @@ runtime/
 state/*
 !state/__init__.py
 !state/state.json
+*.lock
+*.bak
 events/
 tests/results/
 

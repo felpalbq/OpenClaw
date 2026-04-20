@@ -1,8 +1,10 @@
 {
   "meta": {
-    "mode": "test",
-    "created_at": "injected_by_tests",
-    "version": "1.0.0"
+    "last_updated": "",
+    "version": "2.0.0",
+    "last_written_by": "",
+    "last_written_reason": "",
+    "last_written_at": ""
   },
   "clients": {
     "client_test_001": {
@@ -19,9 +21,46 @@
     }
   },
   "modules": {},
+  "crons": {},
+  "llm": {
+    "current_model": "gpt-4o-mini",
+    "current_provider": "openrouter",
+    "agent_model": "gpt-4o-mini",
+    "available_models": []
+  },
   "ahri": {
     "last_interaction": "",
-    "current_context": ""
+    "current_context": "",
+    "audit_mode": false,
+    "audit_scope": null,
+    "audit_expires_at": null,
+    "conversation_history": [],
+    "auto_approved_patterns": [
+      {"tool": "gmail_list", "params": {}},
+      {"tool": "calendar_today", "params": {}},
+      {"tool": "calendar_list", "params": {}},
+      {"tool": "drive_list", "params": {}},
+      {"tool": "trello_get_boards", "params": {}},
+      {"tool": "trello_get_lists", "params": {}},
+      {"tool": "trello_get_cards", "params": {}},
+      {"tool": "trello_get_labels", "params": {}},
+      {"tool": "trello_test", "params": {}},
+      {"tool": "supabase_select", "params": {}},
+      {"tool": "supabase_health", "params": {}}
+    ]
+  },
+  "pending_actions": [],
+  "results": {},
+  "calendar_sync": {
+    "last_check": "",
+    "synced_task_ids": [],
+    "unsynced": []
+  },
+  "proactivity": {
+    "last_notification_at": "",
+    "last_critical_at": "",
+    "last_high_at": "",
+    "pending_digest": []
   },
   "integrations": {
     "google": {"status": "unknown"},

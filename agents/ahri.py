@@ -2,35 +2,50 @@ import os
 import sys
 import json
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 
-ROOT = str(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = str(Path(__file__).parent.parent)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from state import read_state, write_state
+from state import read_state, write_state, merge_state
+from executor import create_action, get_action_result, get_pending_approvals
+from tools.registry import TOOL_REGISTRY, get_tool
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # ---------------------------------------------------------------------------
-# LLM config — via .env (OpenRouter or OpenAI)
+# LLM config
 # ---------------------------------------------------------------------------
 
 LLM_API_KEY = os.environ.get("LLM_API_KEY") or os.environ.get("OPENROUTER_API_KEY", "")
 LLM_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
-SYSTEM_PROMPT = """Você é a Ahri — HQ conversacional do OpenClaw.
-Você é a assistente pessoal do Felipe. Responde com base no estado real do sistema.
+SYSTEM_PROMPT = """Voce e a Ahri — HQ conversacional do OpenClaw.
+Voce e a assistente pessoal do Felipe. Responde com base no estado real do sistema.
 
 Regras:
-- Nunca invente dados. Se não há informação no estado, diga que não tem.
-- Responda em português brasileiro, de forma direta e útil.
-- Se o usuário pedir algo que requer uma tool, use a tool disponível.
-- Se um módulo especialista for mencionado, verifique no estado se está acoplado.
-- Sempre que possível, aja: não só informe, execute.
+- Nunca invente dados. Se nao ha informacao no estado, diga que nao tem.
+- Responda em portugues brasileiro, de forma direta e util.
+- Se o usuario pedir algo que requer uma tool, voce PROPOE a acao. Nao executa.
+- Para acoes de leitura (listar emails, ver agenda), responda normalmente apos os resultados.
+- Para acoes de escrita (criar card, enviar email), informe que precisa de autorizacao.
+- Sempre que possivel, aja: nao so informe, proponha acao.
+- Voce pode ser proativa: alertar sobre eventos proximos, falhas, tarefas vencidas.
+- Maximo 2 observacoes proativas por interacao.
+
+Formato para propor acao:
+ACTION:nome_da_tool|param1=val1,param2=val2
+
+Para acoes de leitura, execute direto.
+Para acoes de escrita, pergunte se o Chefe aprova.
 """
 
 # ---------------------------------------------------------------------------
-# Telegram config
+# Telegram
 # ---------------------------------------------------------------------------
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
@@ -71,194 +86,86 @@ def _llm_call(messages: list) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tools — wrap existing tools for Ahri
+# Conversation history
 # ---------------------------------------------------------------------------
 
-def _try_import(module_path: str, func_name: str):
-    try:
-        mod = __import__(module_path, fromlist=[func_name])
-        return getattr(mod, func_name, None)
-    except Exception:
-        return None
+MAX_HISTORY = 20
+HISTORY_TIMEOUT_MINUTES = 30
 
 
-def _run_tool(tool_name: str, **kwargs) -> dict:
-    tool_map = {
-        "gmail_list": ("tools.google.gmail", "list_emails"),
-        "gmail_read": ("tools.google.gmail", "read_email"),
-        "calendar_today": ("tools.google.calendar", "today_events"),
-        "calendar_list": ("tools.google.calendar", "list_events"),
-        "calendar_create": ("tools.google.calendar", "create_event"),
-        "drive_list": ("tools.google.drive", "list_files"),
-        "drive_search": ("tools.google.drive", "search_file"),
-        "trello_test": ("tools.trello", "test_connection"),
-        "trello_create_card": ("tools.trello", "create_card"),
-        "supabase_health": ("tools.supabase", "is_connected"),
-    }
-
-    if tool_name not in tool_map:
-        return {"error": f"Tool desconhecida: {tool_name}"}
-
-    module_path, func_name = tool_map[tool_name]
-    fn = _try_import(module_path, func_name)
-    if fn is None:
-        return {"error": f"Tool não disponível: {tool_name}"}
-
-    try:
-        result = fn(**kwargs)
-        return result if isinstance(result, dict) else {"result": result}
-    except Exception as e:
-        return {"error": str(e)}
+def _get_history(state: dict) -> list:
+    return state.get("ahri", {}).get("conversation_history", [])
 
 
-def get_available_tools() -> list:
-    tools = []
-    tool_defs = [
-        ("gmail_list", "Listar emails recentes"),
-        ("gmail_read", "Ler email específico"),
-        ("calendar_today", "Eventos de hoje"),
-        ("calendar_list", "Listar eventos"),
-        ("calendar_create", "Criar evento"),
-        ("drive_list", "Listar arquivos do Drive"),
-        ("drive_search", "Buscar arquivo no Drive"),
-        ("trello_test", "Testar conexão Trello"),
-        ("trello_create_card", "Criar card no Trello"),
-        ("supabase_health", "Verificar Supabase"),
-    ]
-    for name, desc in tool_defs:
-        module_path, func_name = dict([
-            ("gmail_list", ("tools.google.gmail", "list_emails")),
-            ("gmail_read", ("tools.google.gmail", "read_email")),
-            ("calendar_today", ("tools.google.calendar", "today_events")),
-            ("calendar_list", ("tools.google.calendar", "list_events")),
-            ("calendar_create", ("tools.google.calendar", "create_event")),
-            ("drive_list", ("tools.google.drive", "list_files")),
-            ("drive_search", ("tools.google.drive", "search_file")),
-            ("trello_test", ("tools.trello", "test_connection")),
-            ("trello_create_card", ("tools.trello", "create_card")),
-            ("supabase_health", ("tools.supabase", "health_check")),
-        ])[name]
-        fn = _try_import(module_path, func_name)
-        tools.append({"name": name, "description": desc, "available": fn is not None})
-    return tools
-
-
-# ---------------------------------------------------------------------------
-# Core: ask()
-# ---------------------------------------------------------------------------
-
-def ask(question: str, state: dict = None) -> str:
-    if state is None:
-        state = read_state()
-
-    state_summary = _summarize_state(state)
-
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Estado atual:\n{state_summary}\n\nPergunta do Felipe: {question}"},
-    ]
-
-    response = _llm_call(messages)
-
-    # Update Ahri's interaction in state
-    state.setdefault("ahri", {})
-    state["ahri"]["last_interaction"] = datetime.now().isoformat()
-    state["ahri"]["current_context"] = question[:200]
-    write_state(state, agent="ahri", reason="interaction")
-
-    # Try to register in memory
-    try:
-        from ahri_memory import write_memory, should_register
-        entry = {
-            "type": "interaction",
-            "summary": question[:200],
-            "relevance": "medium",
-        }
-        if should_register(entry):
-            write_memory(entry)
-    except ImportError:
-        pass
-
-    return response
-
-
-def execute_tool(tool_name: str, **kwargs) -> dict:
-    return _run_tool(tool_name, **kwargs)
-
-
-def ask_with_tools(question: str, state: dict = None) -> str:
-    if state is None:
-        state = read_state()
-
-    state_summary = _summarize_state(state)
-    tools = get_available_tools()
-    tool_list = "\n".join(
-        f"- {t['name']}: {t['description']} ({'OK' if t['available'] else 'indisponível'})"
-        for t in tools
-    )
-
-    prompt = f"""Estado atual:
-{state_summary}
-
-Tools disponíveis:
-{tool_list}
-
-Pergunta do Felipe: {question}
-
-Se precisar usar uma tool, responda EXATAMENTE no formato:
-TOOL:nome_da_tool|param1=val1,param2=val2
-
-Caso contrário, responda normalmente em português brasileiro."""
-
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
-
-    response = _llm_call(messages)
-
-    # Check if Ahri wants to use a tool
-    if response.startswith("TOOL:"):
+def _add_to_history(state: dict, role: str, content: str):
+    history = state.setdefault("ahri", {}).setdefault("conversation_history", [])
+    last = history[-1] if history else None
+    if last:
         try:
-            parts = response.split("|", 1)
-            tool_name = parts[0].replace("TOOL:", "").strip()
-            kwargs = {}
-            if len(parts) > 1:
-                for pair in parts[1].split(","):
-                    k, v = pair.split("=", 1)
-                    kwargs[k.strip()] = v.strip()
-            result = _run_tool(tool_name, **kwargs)
-            # Feed result back to LLM for natural response
-            follow_up = _llm_call([
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Pergunta: {question}\n\nResultado da tool {tool_name}: {json.dumps(result, ensure_ascii=False)}\n\nResponda em português de forma natural com base nesse resultado."},
-            ])
-            state.setdefault("ahri", {})
-            state["ahri"]["last_interaction"] = datetime.now().isoformat()
-            state["ahri"]["current_context"] = question[:200]
-            write_state(state, agent="ahri", reason="tool_execution")
-            return follow_up
-        except Exception as e:
-            return f"Erro ao executar tool: {e}"
+            elapsed = (datetime.now() - datetime.fromisoformat(last.get("ts", ""))).total_minutes()
+            if elapsed > HISTORY_TIMEOUT_MINUTES:
+                history = []
+                state["ahri"]["conversation_history"] = history
+        except (ValueError, TypeError, AttributeError):
+            pass
 
-    state.setdefault("ahri", {})
-    state["ahri"]["last_interaction"] = datetime.now().isoformat()
-    state["ahri"]["current_context"] = question[:200]
-    write_state(state, agent="ahri", reason="interaction")
-
-    try:
-        from ahri_memory import write_memory, should_register
-        entry = {"type": "interaction", "summary": question[:200], "relevance": "medium"}
-        if should_register(entry):
-            write_memory(entry)
-    except ImportError:
-        pass
-
-    return response
+    history.append({"role": role, "content": content, "ts": datetime.now().isoformat()})
+    if len(history) > MAX_HISTORY:
+        state["ahri"]["conversation_history"] = history[-MAX_HISTORY:]
 
 
 # ---------------------------------------------------------------------------
-# Telegram integration
+# Proactivity
+# ---------------------------------------------------------------------------
+
+def _can_notify(priority: str, state: dict) -> bool:
+    pro = state.get("proactivity", {})
+    now = datetime.now()
+
+    if priority == "critica":
+        return True
+
+    last_key = f"last_{priority}_at" if priority in ("alta",) else "last_notification_at"
+    last_str = pro.get(last_key, "")
+    if not last_str:
+        return True
+
+    try:
+        last = datetime.fromisoformat(last_str)
+        if priority == "alta" and (now - last).total_seconds() > 300:
+            return True
+        if priority in ("normal",) and (now - last).total_seconds() > 1800:
+            return True
+    except (ValueError, TypeError):
+        return True
+
+    return False
+
+
+def _record_notification(priority: str, state: dict):
+    pro = state.setdefault("proactivity", {})
+    now = datetime.now().isoformat()
+    pro["last_notification_at"] = now
+    if priority in ("alta", "critica"):
+        pro[f"last_{priority}_at"] = now
+
+
+def send_notification(text: str, priority: str = "normal", chat_id: str = None) -> bool:
+    state = read_state()
+    if not _can_notify(priority, state):
+        if priority in ("normal", "baixa"):
+            state.setdefault("proactivity", {}).setdefault("pending_digest", []).append(text)
+            write_state(state, agent="ahri", reason="notification_queued")
+            return False
+
+    _record_notification(priority, state)
+    write_state(state, agent="ahri", reason="notification_sent")
+
+    return telegram_send(text, chat_id)
+
+
+# ---------------------------------------------------------------------------
+# Telegram
 # ---------------------------------------------------------------------------
 
 def telegram_send(text: str, chat_id: str = None) -> bool:
@@ -292,12 +199,227 @@ def telegram_get_updates(offset: int = 0) -> list:
         return []
 
 
+def _parse_approval(text: str):
+    text = text.strip()
+    if text.startswith("/approve "):
+        return ("approve", text.split()[1])
+    if text.startswith("/reject "):
+        return ("reject", text.split()[1])
+    return None, None
+
+
+def handle_telegram_update(update: dict):
+    text = update.get("message", {}).get("text", "")
+    chat_id = str(update.get("message", {}).get("chat", {}).get("id", ""))
+
+    # Check for approval commands
+    action_type, action_id = _parse_approval(text)
+    if action_type == "approve":
+        from executor import approve_action
+        if approve_action(action_id, approved_by=f"telegram_{chat_id}"):
+            telegram_send("Acao aprovada. Executando...", chat_id)
+        else:
+            telegram_send("Acao nao encontrada ou ja processada.", chat_id)
+        return
+
+    if action_type == "reject":
+        from executor import reject_action
+        if reject_action(action_id, rejected_by=f"telegram_{chat_id}"):
+            telegram_send("Acao rejeitada.", chat_id)
+        else:
+            telegram_send("Acao nao encontrada ou ja processada.", chat_id)
+        return
+
+    # Normal conversation
+    response = ask(text)
+    telegram_send(response, chat_id)
+
+    # Show pending approvals
+    pending = get_pending_approvals()
+    if pending:
+        lines = ["Acoes pendentes de aprovacao:"]
+        for a in pending:
+            lines.append(f"  {a['id']}: {a['tool']} — /approve {a['id']} ou /reject {a['id']}")
+        telegram_send("\n".join(lines), chat_id)
+
+
+# ---------------------------------------------------------------------------
+# Core: ask() — operates via state, never directly
+# ---------------------------------------------------------------------------
+
+def ask(question: str, state: dict = None) -> str:
+    if state is None:
+        state = read_state()
+
+    state_summary = _summarize_state(state)
+    history = _get_history(state)
+    memory_context = _get_memory_context()
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    if memory_context:
+        messages.append({"role": "system", "content": f"Memoria recente:\n{memory_context}"})
+
+    for entry in history:
+        messages.append({"role": entry["role"], "content": entry["content"]})
+
+    messages.append({
+        "role": "user",
+        "content": f"Estado atual:\n{state_summary}\n\nMensagem do Chefe: {question}",
+    })
+
+    response = _llm_call(messages)
+    _add_to_history(state, "user", question)
+    _add_to_history(state, "assistant", response)
+
+    # Parse ACTION directives from response
+    actions = _parse_actions(response)
+
+    for tool_name, params in actions:
+        tool_def = get_tool(tool_name)
+        if tool_def:
+            try:
+                act_id = create_action(tool_name, params=params, source="ahri")
+                if tool_def["requires_approval"]:
+                    response += f"\n\nAcao criada: {act_id} — aguardando sua aprovacao."
+            except ValueError:
+                pass
+
+    # Update state
+    state.setdefault("ahri", {})
+    state["ahri"]["last_interaction"] = datetime.now().isoformat()
+    state["ahri"]["current_context"] = question[:200]
+    write_state(state, agent="ahri", reason="interaction")
+
+    # Register in memory if relevant
+    try:
+        from ahri_memory import write_memory, should_register
+        entry = {"type": "interaction", "summary": question[:200], "relevance": "medium"}
+        if should_register(entry):
+            write_memory(entry)
+    except ImportError:
+        pass
+
+    return response
+
+
+def ask_for_result(action_id: str) -> str:
+    result = get_action_result(action_id)
+    if not result:
+        return "Resultado nao encontrado."
+
+    status = result.get("status", "unknown")
+    data = result.get("data")
+    error = result.get("error")
+
+    if status == "success" and data:
+        return json.dumps(data, ensure_ascii=False, indent=2)
+    elif error:
+        return f"Erro: {error}"
+    else:
+        return "Acao ainda em andamento."
+
+
+def propose_action(tool_name: str, params: dict = None, priority: str = "normal") -> str:
+    tool_def = get_tool(tool_name)
+    if not tool_def:
+        return f"Tool nao encontrada: {tool_name}"
+
+    try:
+        act_id = create_action(tool_name, params=params, source="ahri", priority=priority)
+        if tool_def["requires_approval"]:
+            return f"Acao {act_id} criada. Aguardando aprovacao."
+        return f"Acao {act_id} criada e sera executada."
+    except ValueError as e:
+        return str(e)
+
+
+# ---------------------------------------------------------------------------
+# Proactive checks (called by crons)
+# ---------------------------------------------------------------------------
+
+def check_upcoming_events():
+    state = read_state()
+    act_id = create_action("calendar_today", source="ahri_proactive", priority="alta")
+    return act_id
+
+
+def check_integration_health():
+    state = read_state()
+    actions = []
+    for tool_name in ("trello_test", "supabase_health"):
+        tool_def = get_tool(tool_name)
+        if tool_def:
+            actions.append(create_action(tool_name, source="ahri_proactive", priority="normal"))
+    return actions
+
+
+def check_overdue_tasks():
+    state = read_state()
+    tasks = state.get("tasks", {})
+    overdue = []
+    now = datetime.now()
+
+    for task_id, task in tasks.items():
+        if not isinstance(task, dict):
+            continue
+        due = task.get("due_time") or task.get("due_date")
+        if due and task.get("status") not in ("done", "complete"):
+            try:
+                if datetime.fromisoformat(due) < now:
+                    overdue.append({"id": task_id, "due": due})
+            except (ValueError, TypeError):
+                pass
+
+    if overdue:
+        msg = f"Chefe, {len(overdue)} tarefa(s) vencida(s): " + ", ".join(t["id"] for t in overdue)
+        send_notification(msg, priority="alta")
+    return overdue
+
+
+# ---------------------------------------------------------------------------
+# Audit mode
+# ---------------------------------------------------------------------------
+
+def start_audit(scope: str, duration_minutes: int = 30):
+    state = read_state()
+    state["ahri"]["audit_mode"] = True
+    state["ahri"]["audit_scope"] = scope
+    state["ahri"]["audit_expires_at"] = (datetime.now() + timedelta(minutes=duration_minutes)).isoformat()
+    write_state(state, agent="user", reason="audit_authorized")
+
+
+def stop_audit():
+    state = read_state()
+    state["ahri"]["audit_mode"] = False
+    state["ahri"]["audit_scope"] = None
+    state["ahri"]["audit_expires_at"] = None
+    write_state(state, agent="ahri", reason="audit_expired")
+
+
+def is_audit_active(state: dict = None) -> bool:
+    if state is None:
+        state = read_state()
+    if not state.get("ahri", {}).get("audit_mode"):
+        return False
+    expires = state["ahri"].get("audit_expires_at")
+    if expires:
+        try:
+            if datetime.now() > datetime.fromisoformat(expires):
+                stop_audit()
+                return False
+        except (ValueError, TypeError):
+            pass
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _summarize_state(state: dict) -> str:
     lines = []
+
     if "clients" in state and state["clients"]:
         lines.append(f"Clientes: {len(state['clients'])} registrado(s)")
     else:
@@ -308,24 +430,70 @@ def _summarize_state(state: dict) -> str:
         pending = sum(1 for t in tasks.values() if isinstance(t, dict) and t.get("status") == "pending")
         ready = sum(1 for t in tasks.values() if isinstance(t, dict) and t.get("status") == "ready")
         done = sum(1 for t in tasks.values() if isinstance(t, dict) and t.get("status") in ("done", "complete"))
-        lines.append(f"Tarefas: {len(tasks)} total ({pending} pendente(s), {ready} pronta(s), {done} concluída(s))")
+        lines.append(f"Tarefas: {len(tasks)} ({pending} pendente(s), {ready} pronta(s), {done} concluida(s))")
     else:
         lines.append("Tarefas: nenhuma")
 
     modules = state.get("modules", {})
     active = [k for k, v in modules.items() if isinstance(v, dict) and v.get("status") == "active"]
     if active:
-        lines.append(f"Módulos ativos: {', '.join(active)}")
+        lines.append(f"Modulos ativos: {', '.join(active)}")
     else:
-        lines.append("Módulos: nenhum módulo especialista contratado")
+        lines.append("Modulos: nenhum modulo especialista contratado")
 
     integrations = state.get("integrations", {})
     for name, info in integrations.items():
         if isinstance(info, dict):
             lines.append(f"  {name}: {info.get('status', 'unknown')}")
 
-    ahri = state.get("ahri", {})
-    if ahri.get("last_interaction"):
-        lines.append(f"Última interação: {ahri['last_interaction']}")
+    # Pending actions
+    pending_actions = [a for a in state.get("pending_actions", []) if a.get("status") in ("pending", "pending_approval", "approved")]
+    if pending_actions:
+        lines.append(f"Acoes pendentes: {len(pending_actions)}")
+
+    # Results
+    results = state.get("results", {})
+    recent_results = {k: v for k, v in results.items() if v.get("status")}
+    if recent_results:
+        lines.append(f"Resultados recentes: {len(recent_results)}")
+
+    # Crons
+    crons = state.get("crons", {})
+    if crons:
+        lines.append(f"Crons: {len(crons)} configurado(s)")
+
+    # LLM
+    llm = state.get("llm", {})
+    if llm.get("current_model"):
+        lines.append(f"Modelo atual: {llm['current_model']}")
+
+    # Audit
+    if state.get("ahri", {}).get("audit_mode"):
+        lines.append(f"MODO AUDITORIA ATIVO — escopo: {state['ahri'].get('audit_scope', 'geral')}")
 
     return "\n".join(lines)
+
+
+def _get_memory_context() -> str:
+    try:
+        from ahri_memory import get_context_for_session
+        return get_context_for_session()
+    except ImportError:
+        return ""
+
+
+def _parse_actions(response: str) -> list:
+    actions = []
+    for line in response.split("\n"):
+        line = line.strip()
+        if line.startswith("ACTION:"):
+            parts = line[7:].split("|", 1)
+            tool_name = parts[0].strip()
+            params = {}
+            if len(parts) > 1:
+                for pair in parts[1].split(","):
+                    if "=" in pair:
+                        k, v = pair.split("=", 1)
+                        params[k.strip()] = v.strip()
+            actions.append((tool_name, params))
+    return actions

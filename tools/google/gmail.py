@@ -74,3 +74,17 @@ def delete_email(message_id):
         return {"status": "deleted", "message_id": message_id}
     except Exception as e:
         return {"error": str(e), "cause": "Gmail API falhou"}
+
+
+def compose_email(to: str, subject: str, body: str):
+    """Cria e envia novo email."""
+    try:
+        service = get_service()
+        mime_msg = MIMEText(body)
+        mime_msg['to'] = to
+        mime_msg['subject'] = subject
+        encoded_msg = base64.urlsafe_b64encode(mime_msg.as_bytes()).decode()
+        send_message = service.users().messages().send(userId='me', body={'raw': encoded_msg}).execute()
+        return {"success": True, "message_id": send_message.get('id'), "to": to, "subject": subject}
+    except Exception as e:
+        return {"error": str(e), "cause": "Gmail API falhou"}
