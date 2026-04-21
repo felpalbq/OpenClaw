@@ -1,41 +1,25 @@
-import json
+"""
+Context read/write — delegates to ahri memory repo.
+"""
 import os
 import sys
 from pathlib import Path
 
-AHRI_MEMORY_DIR = Path(os.environ.get("AHRI_MEMORY_DIR", str(Path(__file__).parent.parent / "ahri")))
+AHRI_MEMORY_DIR = os.environ.get("AHRI_MEMORY_DIR", str(Path(__file__).parent.parent / "ahri"))
 
-if str(AHRI_MEMORY_DIR) not in sys.path:
-    sys.path.insert(0, str(AHRI_MEMORY_DIR))
+if AHRI_MEMORY_DIR not in sys.path:
+    sys.path.insert(0, AHRI_MEMORY_DIR)
 
-try:
-    import ahri as ahri_memory
-    _HAS_AHRI = True
-except ImportError:
-    _HAS_AHRI = False
+import ahri as _ahri
 
 
 def read_context(key: str):
-    if _HAS_AHRI:
-        return ahri_memory.read_entry("context", key)
-    path = AHRI_MEMORY_DIR / "context" / f"{key}.json"
-    if not path.exists():
-        return None
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return None
+    return _ahri.read_entry("context", key)
 
 
 def write_context(key: str, data):
-    if _HAS_AHRI:
-        ahri_memory.write_entry("context", key, data if isinstance(data, dict) else {"data": data})
-        return
-    (AHRI_MEMORY_DIR / "context").mkdir(parents=True, exist_ok=True)
-    path = AHRI_MEMORY_DIR / "context" / f"{key}.json"
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    entry = data if isinstance(data, dict) else {"data": data}
+    _ahri.write_entry("context", key, entry)
 
 
 def update_context(key: str, partial: dict):
@@ -48,10 +32,8 @@ def update_context(key: str, partial: dict):
 
 
 def list_context_keys() -> list:
-    ctx_dir = AHRI_MEMORY_DIR / "context"
-    if not ctx_dir.exists():
-        return []
-    return [p.stem for p in ctx_dir.glob("*.json")]
+    entries = _ahri.list_entries("context")
+    return [e.get("id", "") for e in entries]
 
 
 def read_client(client_id: str):
