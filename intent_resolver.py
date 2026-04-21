@@ -12,6 +12,7 @@ if ROOT not in sys.path:
 
 from state import read_state, write_state, merge_state, update_state
 from tools.registry import TOOL_REGISTRY, get_tool
+from fast_patterns import try_fast_resolve
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -106,6 +107,11 @@ def resolve_intention(intention: dict) -> dict:
     text = intention.get("text", "")
     if not text:
         return {"status": "unresolvable", "reason": "empty_text"}
+
+    # Fast-path: keyword match for obvious read-only intents
+    fast = try_fast_resolve(text)
+    if fast:
+        return fast
 
     tools_catalog = _build_tools_catalog()
 

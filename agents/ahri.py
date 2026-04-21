@@ -11,6 +11,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from state import read_state, write_state, merge_state, update_state
+from fast_patterns import try_fast_resolve
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -309,6 +310,20 @@ def handle_telegram_update(update: dict):
 def ask(question: str, state: dict = None) -> str:
     if state is None:
         state = read_state()
+
+    # Fast-path: obvious read-only intents skip the full LLM cycle
+    fast = try_fast_resolve(question)
+    if fast:
+        merge_state({
+            "action_requests": [{
+                "tool": fast["tool"],
+                "params": fast.get("params", {}),
+                "source": "ahri_fast",
+                "priority": "normal",
+                "requires_approval": False,
+            }]
+        }, agent="ahri", reason="fast_pattern")
+        return f"Ok, vou {question.lower().strip('.')}. Um momento..."
 
     state_summary = _summarize_state(state)
     memory_context = _get_memory_context()
