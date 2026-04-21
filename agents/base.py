@@ -7,7 +7,7 @@ ROOT = str(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from state import read_state, write_state
+from state import read_state, write_state, merge_state
 
 
 class BaseModule(ABC):
@@ -26,49 +26,40 @@ class BaseModule(ABC):
         pass
 
     def write_result(self, result: dict, state: dict = None):
-        if state is None:
-            state = read_state()
-
-        if "modules" not in state:
-            state["modules"] = {}
-        if self.name not in state["modules"]:
-            state["modules"][self.name] = {}
-
-        state["modules"][self.name]["last_result"] = result
-        state["modules"][self.name]["last_act_at"] = datetime.now().isoformat()
-
-        write_state(state, agent=self.name, reason="module_act")
+        merge_state({
+            "modules": {
+                self.name: {
+                    "last_result": result,
+                    "last_act_at": datetime.now().isoformat()
+                }
+            }
+        }, agent=self.name, reason="module_act")
 
     def couple(self, state: dict = None):
-        if state is None:
-            state = read_state()
-
-        if "modules" not in state:
-            state["modules"] = {}
-
-        state["modules"][self.name] = {
-            "status": "active",
-            "display_name": self.display_name,
-            "llm_tier": self.llm_tier,
-            "cron_interval": self.cron_interval,
-            "skills": self.skills,
-            "coupled_at": datetime.now().isoformat(),
-            "last_act_at": "",
-            "last_result": {},
-        }
-
-        write_state(state, agent="ahri", reason=f"couple_{self.name}")
+        merge_state({
+            "modules": {
+                self.name: {
+                    "status": "active",
+                    "display_name": self.display_name,
+                    "llm_tier": self.llm_tier,
+                    "cron_interval": self.cron_interval,
+                    "skills": self.skills,
+                    "coupled_at": datetime.now().isoformat(),
+                    "last_act_at": "",
+                    "last_result": {},
+                }
+            }
+        }, agent="ahri", reason=f"couple_{self.name}")
 
     def decouple(self, state: dict = None):
-        if state is None:
-            state = read_state()
-
-        modules = state.get("modules", {})
-        if self.name in modules:
-            modules[self.name]["status"] = "inactive"
-            modules[self.name]["decoupled_at"] = datetime.now().isoformat()
-
-        write_state(state, agent="ahri", reason=f"decouple_{self.name}")
+        merge_state({
+            "modules": {
+                self.name: {
+                    "status": "inactive",
+                    "decoupled_at": datetime.now().isoformat()
+                }
+            }
+        }, agent="ahri", reason=f"decouple_{self.name}")
 
     def is_active(self, state: dict = None) -> bool:
         if state is None:

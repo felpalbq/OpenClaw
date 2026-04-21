@@ -10,7 +10,7 @@ ROOT = str(Path(__file__).parent)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from state import read_state, write_state
+from state import read_state, write_state, merge_state, update_state
 from tools.registry import TOOL_REGISTRY, get_tool
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -125,88 +125,86 @@ def resolve_intention(intention: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def intent_resolver_cycle():
-    state = read_state()
-    intentions = state.get("intentions", [])
-    changed = False
+    def _mutate(state):
+        intentions = state.get("intentions", [])
+        changed = False
 
-    for intention in intentions:
-        if intention.get("status") != "pending":
-            continue
+        for intention in intentions:
+            if intention.get("status") != "pending":
+                continue
 
-        result = resolve_intention(intention)
+            result = resolve_intention(intention)
 
-        if result.get("unresolvable"):
-            intention["status"] = "unresolvable"
-            intention["resolved_at"] = datetime.now().isoformat()
-            intention["resolution_reason"] = result.get("reason", "unknown")
-            changed = True
-            continue
+            if result.get("unresolvable"):
+                intention["status"] = "unresolvable"
+                intention["resolved_at"] = datetime.now().isoformat()
+                intention["resolution_reason"] = result.get("reason", "unknown")
+                changed = True
+                continue
 
-        tool_name = result.get("tool")
-        if not tool_name:
-            # Ambiguous
-            intention["status"] = "ambiguous"
-            intention["resolved_at"] = datetime.now().isoformat()
-            intention["ambiguity"] = result.get("ambiguity", "")
-            intention["candidates"] = result.get("candidates", [])
-            intention["confidence"] = result.get("confidence", "low")
-            changed = True
-            continue
+            tool_name = result.get("tool")
+            if not tool_name:
+                intention["status"] = "ambiguous"
+                intention["resolved_at"] = datetime.now().isoformat()
+                intention["ambiguity"] = result.get("ambiguity", "")
+                intention["candidates"] = result.get("candidates", [])
+                intention["confidence"] = result.get("confidence", "low")
+                changed = True
+                continue
 
-        # Validate tool exists
-        tool_def = get_tool(tool_name)
-        if not tool_def:
-            intention["status"] = "unresolvable"
-            intention["resolved_at"] = datetime.now().isoformat()
-            intention["resolution_reason"] = f"tool_not_found: {tool_name}"
-            changed = True
-            continue
+            tool_def = get_tool(tool_name)
+            if not tool_def:
+                intention["status"] = "unresolvable"
+                intention["resolved_at"] = datetime.now().isoformat()
+                intention["resolution_reason"] = f"tool_not_found: {tool_name}"
+                changed = True
+                continue
 
-        confidence = result.get("confidence", "low")
-        if confidence == "low":
-            intention["status"] = "ambiguous"
-            intention["resolved_at"] = datetime.now().isoformat()
-            intention["ambiguity"] = f"Baixa confianca na resolucao (tool: {tool_name})"
-            intention["candidates"] = [tool_name]
-            intention["confidence"] = confidence
-            changed = True
-            continue
+            confidence = result.get("confidence", "low")
+            if confidence == "low":
+                intention["status"] = "ambiguous"
+                intention["resolved_at"] = datetime.now().isoformat()
+                intention["ambiguity"] = f"Baixa confianca na resolucao (tool: {tool_name})"
+                intention["candidates"] = [tool_name]
+                intention["confidence"] = confidence
+                changed = True
+                continue
 
-        # High/medium confidence — create action in state
-        params = result.get("params", {})
-        try:
-            from executor import create_action
-            action_id = create_action(tool_name, params=params, source="intent_resolver")
+            # High/medium confidence — write action request to state
+            params = result.get("params", {})
+            requires_approval = tool_def.get("requires_approval", True) if tool_def else True
+            state.setdefault("action_requests", []).append({
+                "tool": tool_name,
+                "params": params,
+                "source": "intent_resolver",
+                "priority": "normal",
+                "requires_approval": requires_approval,
+                "intention_id": intention["id"],
+            })
             intention["status"] = "resolved"
             intention["resolved_at"] = datetime.now().isoformat()
-            intention["resolved_action_id"] = action_id
-            changed = True
-        except ValueError as e:
-            intention["status"] = "unresolvable"
-            intention["resolved_at"] = datetime.now().isoformat()
-            intention["resolution_reason"] = str(e)
+            intention["resolution_reason"] = f"action_requested:{tool_name}"
             changed = True
 
-    # Cleanup: remove resolved/unresolvable intentions older than 1 hour
-    now = datetime.now()
-    still_active = []
-    for intention in intentions:
-        terminal = intention.get("status") in ("resolved", "unresolvable")
-        if terminal:
-            resolved_at = intention.get("resolved_at", "")
-            if resolved_at:
-                try:
-                    elapsed = (now - datetime.fromisoformat(resolved_at)).total_seconds()
-                    if elapsed > 3600:
-                        continue
-                except (ValueError, TypeError):
-                    pass
-        still_active.append(intention)
+        # Cleanup: remove resolved/unresolvable intentions older than 1 hour
+        now = datetime.now()
+        still_active = []
+        for intention in intentions:
+            terminal = intention.get("status") in ("resolved", "unresolvable")
+            if terminal:
+                resolved_at = intention.get("resolved_at", "")
+                if resolved_at:
+                    try:
+                        elapsed = (now - datetime.fromisoformat(resolved_at)).total_seconds()
+                        if elapsed > 3600:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+            still_active.append(intention)
 
-    state["intentions"] = still_active
+        state["intentions"] = still_active
 
-    if changed:
-        write_state(state, agent="intent_resolver", reason="cycle_completed")
+    update_state(_mutate, agent="intent_resolver", reason="cycle_completed")
 
 
 # ---------------------------------------------------------------------------
@@ -219,21 +217,39 @@ def get_ambiguous_intentions() -> list:
 
 
 def resolve_ambiguity(intention_id: str, chosen_tool: str, params: dict = None) -> str:
-    state = read_state()
-    for intention in state.get("intentions", []):
-        if intention.get("id") == intention_id and intention.get("status") == "ambiguous":
-            tool_def = get_tool(chosen_tool)
-            if not tool_def:
-                return f"Tool nao encontrada: {chosen_tool}"
+    found = False
 
-            from executor import create_action
-            action_id = create_action(chosen_tool, params=params or {}, source="intent_resolver")
-            intention["status"] = "resolved"
-            intention["resolved_at"] = datetime.now().isoformat()
-            intention["resolved_action_id"] = action_id
-            write_state(state, agent="intent_resolver", reason=f"ambiguity_resolved_{intention_id}")
-            return action_id
+    def _mutate(state):
+        nonlocal found
+        for intention in state.get("intentions", []):
+            if intention.get("id") == intention_id and intention.get("status") == "ambiguous":
+                tool_def = get_tool(chosen_tool)
+                if not tool_def:
+                    intention["status"] = "unresolvable"
+                    intention["resolved_at"] = datetime.now().isoformat()
+                    intention["resolution_reason"] = f"Tool nao encontrada: {chosen_tool}"
+                    found = True
+                    return
 
+                requires_approval = tool_def.get("requires_approval", True)
+                state.setdefault("action_requests", []).append({
+                    "tool": chosen_tool,
+                    "params": params or {},
+                    "source": "intent_resolver",
+                    "priority": "normal",
+                    "requires_approval": requires_approval,
+                    "intention_id": intention_id,
+                })
+                intention["status"] = "resolved"
+                intention["resolved_at"] = datetime.now().isoformat()
+                intention["resolution_reason"] = f"action_requested:{chosen_tool}"
+                found = True
+                return
+
+    update_state(_mutate, agent="intent_resolver", reason=f"ambiguity_resolved_{intention_id}")
+
+    if found:
+        return intention_id
     return "Intencao nao encontrada ou nao esta ambígua"
 
 

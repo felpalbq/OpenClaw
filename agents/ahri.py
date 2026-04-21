@@ -492,6 +492,19 @@ _last_update_id = 0
 
 def telegram_poll_cycle():
     global _last_update_id
+
+    # Send queued notifications from state
+    state = read_state()
+    notifications = state.get("notifications", [])
+    if notifications:
+        for notif in notifications:
+            text = notif.get("text", "")
+            priority = notif.get("priority", "normal")
+            telegram_send(text)
+        # Clear notifications after sending
+        merge_state({"notifications": []}, agent="ahri", reason="notifications_sent")
+
+    # Poll for Telegram updates
     updates = telegram_get_updates(offset=_last_update_id + 1)
     for update in updates:
         _last_update_id = update.get("update_id", _last_update_id)

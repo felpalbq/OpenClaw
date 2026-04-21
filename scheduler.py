@@ -10,7 +10,7 @@ ROOT = str(Path(__file__).parent)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from state import read_state, write_state
+from state import read_state, write_state, merge_state, update_state
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -40,25 +40,25 @@ DEFAULT_CRONS = {
     },
     "audit_check": {
         "interval_seconds": 60,
-        "module": "agents.ahri",
+        "module": "scheduler",
         "function": "audit_expiry_check",
         "status": "active",
     },
     "calendar_check": {
         "interval_seconds": 300,
-        "module": "agents.ahri",
+        "module": "scheduler",
         "function": "check_upcoming_events",
         "status": "active",
     },
     "integration_health": {
         "interval_seconds": 600,
-        "module": "agents.ahri",
+        "module": "scheduler",
         "function": "check_integration_health",
         "status": "active",
     },
     "overdue_tasks": {
         "interval_seconds": 900,
-        "module": "agents.ahri",
+        "module": "scheduler",
         "function": "check_overdue_tasks",
         "status": "active",
     },
@@ -78,17 +78,13 @@ DEFAULT_CRONS = {
 
 
 def _register_default_crons():
-    state = read_state()
-    crons = state.setdefault("cron_runtime", {})
+    def _mutate(state):
+        crons = state.setdefault("cron_runtime", {})
+        for name, config in DEFAULT_CRONS.items():
+            if name not in crons:
+                crons[name] = {**config, "last_run_at": "", "run_count": 0}
 
-    changed = False
-    for name, config in DEFAULT_CRONS.items():
-        if name not in crons:
-            crons[name] = {**config, "last_run_at": "", "run_count": 0}
-            changed = True
-
-    if changed:
-        write_state(state, agent="scheduler", reason="register_default_crons")
+    update_state(_mutate, agent="scheduler", reason="register_default_crons")
 
 
 # ---------------------------------------------------------------------------
@@ -108,11 +104,14 @@ def _should_run(cron_name: str, interval_seconds: int) -> bool:
 
 
 def _update_cron_runtime(cron_name: str):
-    state = read_state()
-    cron = state.get("cron_runtime", {}).get(cron_name, {})
-    cron["last_run_at"] = datetime.now().isoformat()
-    cron["run_count"] = cron.get("run_count", 0) + 1
-    write_state(state, agent="scheduler", reason=f"cron_{cron_name}")
+    merge_state({
+        "cron_runtime": {
+            cron_name: {
+                "last_run_at": datetime.now().isoformat(),
+                "run_count": 1
+            }
+        }
+    }, agent="scheduler", reason=f"cron_{cron_name}")
 
 
 def _run_cron_function(module_name: str, function_name: str):
@@ -128,44 +127,56 @@ def _run_cron_function(module_name: str, function_name: str):
 # Built-in scheduler functions
 # ---------------------------------------------------------------------------
 
+def _now():
+    return datetime.now().isoformat()
+
 def audit_expiry_check():
-    from agents.ahri import is_audit_active, send_notification
     state = read_state()
     if state.get("ahri_runtime", {}).get("audit_mode"):
-        if is_audit_active(state):
-            return
-        send_notification("Modo auditoria expirou. Voltando ao normal.", priority="normal")
+        expires = state["ahri_runtime"].get("audit_expires_at")
+        if expires:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires):
+                    merge_state({"ahri_runtime": {"audit_mode": False, "audit_scope": None, "audit_expires_at": None}},
+                                agent="scheduler", reason="audit_expired")
+                    merge_state({"notifications": [{"text": "Modo auditoria expirou. Voltando ao normal.", "priority": "normal", "created_at": _now()}]},
+                                agent="scheduler", reason="audit_expired_notification")
+            except (ValueError, TypeError):
+                pass
 
 
 def flush_digest():
-    from agents.ahri import telegram_send
     state = read_state()
     digest = state.get("proactivity", {}).get("pending_digest", [])
     if not digest:
         return
 
-    msg = f"Atualizacoes acumuladas ({len(digest)}):\n" + "\n".join(f"- {d}" for d in digest[:5])
-    telegram_send(msg)
-
-    state = read_state()
-    state.setdefault("proactivity", {})["pending_digest"] = []
-    write_state(state, agent="scheduler", reason="digest_flushed")
+    merge_state({"notifications": [{"text": f"Atualizacoes acumuladas ({len(digest)}): " + ", ".join(str(d) for d in digest[:5]), "priority": "normal", "created_at": _now()}]},
+                agent="scheduler", reason="digest_notification")
+    merge_state({"proactivity": {"pending_digest": []}}, agent="scheduler", reason="digest_flushed")
 
 
 def check_upcoming_events():
-    from executor import create_action
-    create_action("calendar_today", source="ahri_proactive", priority="alta")
+    def _mutate(state):
+        state.setdefault("action_requests", []).append({
+            "tool": "calendar_today",
+            "params": {},
+            "source": "proactive",
+            "priority": "alta",
+        })
+    update_state(_mutate, agent="scheduler", reason="proactive_calendar_check")
 
 
 def check_integration_health():
-    from executor import create_action
-    from tools.registry import get_tool
-    for tool_name in ("trello_test", "supabase_health"):
-        if get_tool(tool_name):
-            try:
-                create_action(tool_name, source="ahri_proactive", priority="normal")
-            except Exception:
-                pass
+    def _mutate(state):
+        for tool_name in ("trello_test", "supabase_health"):
+            state.setdefault("action_requests", []).append({
+                "tool": tool_name,
+                "params": {},
+                "source": "proactive",
+                "priority": "normal",
+            })
+    update_state(_mutate, agent="scheduler", reason="proactive_integration_check")
 
 
 def check_overdue_tasks():
@@ -192,9 +203,9 @@ def check_overdue_tasks():
                 pass
 
     if overdue:
-        from agents.ahri import send_notification
         msg = f"Chefe, {len(overdue)} tarefa(s) vencida(s): " + ", ".join(t["id"] for t in overdue)
-        send_notification(msg, priority="alta")
+        merge_state({"notifications": [{"text": msg, "priority": "alta", "created_at": _now()}]},
+                    agent="scheduler", reason="overdue_tasks_notification")
 
 
 # ---------------------------------------------------------------------------

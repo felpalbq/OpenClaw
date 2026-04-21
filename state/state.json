@@ -39,5 +39,7 @@
     "audit_scope": null,
     "audit_expires_at": null
   },
+  "action_requests": [],
+  "notifications": [],
   "cron_runtime": {}
 }
