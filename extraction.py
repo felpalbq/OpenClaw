@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = str(Path(__file__).parent)
@@ -96,6 +96,15 @@ def _check_explicit_decision(content: str, ts: str):
                     },
                     meta={"relevance": "high", "source": "extraction"},
                 )
+            elif count == 2:
+                existing = ahri_memory.search_entries("decisions", content[:50])
+                for entry in existing:
+                    if entry.get("status") == "candidate" and entry.get("title", "")[:50] == content[:50]:
+                        ahri_memory.write_entry(
+                            "decisions", entry.get("id", ""),
+                            {**entry, "status": "confirmed", "confirmed_at": ts},
+                        )
+                        break
             break
 
 
@@ -105,13 +114,37 @@ def _check_explicit_preference(content: str, ts: str):
 
     for marker in preference_markers:
         if marker in content_lower:
-            # Update user context
-            user_ctx = ahri_memory.read_entry("context", "user") or {}
-            prefs = user_ctx.setdefault("preferences", [])
+            count = _increment_event("explicit_preference", content[:100])
             pref_text = content[:200]
-            if not any(p == pref_text for p in prefs):
-                prefs.append(pref_text)
-                ahri_memory.write_entry("context", "user", user_ctx)
+
+            if count == 1:
+                ahri_memory.write_entry(
+                    "decisions",
+                    f"d_pref_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    {
+                        "title": f"Preferência: {pref_text[:80]}",
+                        "context": "Identificado por extração de sessions",
+                        "source": "extraction",
+                        "status": "candidate",
+                        "created_at": ts,
+                    },
+                    meta={"relevance": "medium", "source": "extraction"},
+                )
+            elif count == 2:
+                existing = ahri_memory.search_entries("decisions", pref_text[:50])
+                for entry in existing:
+                    if entry.get("status") == "candidate" and pref_text[:50] in entry.get("title", ""):
+                        ahri_memory.write_entry(
+                            "decisions", entry.get("id", ""),
+                            {**entry, "status": "confirmed", "confirmed_at": ts},
+                        )
+                        # Apply confirmed preference to user context
+                        user_ctx = ahri_memory.read_entry("context", "user") or {}
+                        prefs = user_ctx.setdefault("preferences", [])
+                        if pref_text not in prefs:
+                            prefs.append(pref_text)
+                            ahri_memory.write_entry("context", "user", user_ctx)
+                        break
             break
 
 
@@ -121,8 +154,8 @@ def _check_context_update(content: str, ts: str):
 
     for marker in context_markers:
         if marker in content_lower:
-            # Context updates are logged but not auto-applied
             count = _increment_event("context_update", content[:100])
+
             if count == 1:
                 ahri_memory.write_entry(
                     "learnings",
@@ -130,11 +163,20 @@ def _check_context_update(content: str, ts: str):
                     {
                         "type": "context_update",
                         "summary": content[:200],
-                        "status": "pending_review",
+                        "status": "candidate",
                         "created_at": ts,
                     },
                     meta={"relevance": "medium", "source": "extraction"},
                 )
+            elif count == 2:
+                existing = ahri_memory.search_entries("learnings", content[:50])
+                for entry in existing:
+                    if entry.get("status") == "candidate" and entry.get("type") == "context_update":
+                        ahri_memory.write_entry(
+                            "learnings", entry.get("id", ""),
+                            {**entry, "status": "confirmed", "confirmed_at": ts},
+                        )
+                        break
             break
 
 
@@ -224,8 +266,30 @@ def consolidate():
         else:
             seen[summary] = lid
 
+    # Prune stale candidates (>30 days without confirmation)
+    _prune_stale_candidates()
+
     # Run maintenance (TTL pruning)
     ahri_memory.maintenance()
+
+
+def _prune_stale_candidates(max_days: int = 30):
+    cutoff = datetime.now() - timedelta(days=max_days)
+
+    for entry_type in ("decisions", "learnings"):
+        entries = ahri_memory.list_entries(entry_type)
+        for entry in entries:
+            if entry.get("status") != "candidate":
+                continue
+            created = entry.get("created_at", "")
+            if not created:
+                continue
+            try:
+                created_dt = datetime.fromisoformat(created)
+                if created_dt < cutoff:
+                    ahri_memory.delete_entry(entry_type, entry.get("id", ""))
+            except (ValueError, TypeError):
+                pass
 
 
 # ---------------------------------------------------------------------------
