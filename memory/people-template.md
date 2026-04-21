@@ -2,7 +2,7 @@
 
 > **Natureza:** Este arquivo é MEMÓRIA DO HQ — experiência dinâmica, editável pelo Chefe e atualizada por pipeline.
 > **NÃO é contrato do sistema.** Contratos vivem em workspace/ e são escritos pelo arquiteto.
-> **Pareamento:** Cada entrada aqui tem correspondente em ahri/context/ (formato JSON, programático).
+> **Pareamento:** Cada entrada aqui tem correspondente em ahri/context/ (formato JSON, programático). ahri/ é a fonte primária — este arquivo é projeção curada.
 > **Domínio:** Contatos e preferências OPERACIONAIS — como interagir com cada pessoa.
 
 ## Equipe

@@ -103,11 +103,11 @@ Ahri (interpreta) → state.intentions (NL) → intent_resolver (traduz + valida
 
 ### Regras
 
-- **HQ memory** (`memory/`): curada, limitada, editável pelo Chefe, formato .md
-- **External memory** (`ahri/`): orgânica, versionada em Git, mantida por pipeline, formato .json
-- **Pareamento unidirecional:** ahri/ → memory/. Tudo no HQ tem correspondente no externo. Nem tudo no externo vira entrada no HQ.
+- **HQ memory** (`memory/`): projeção operacional curada, editável pelo Chefe, formato .md. NÃO é fonte de verdade — é reflexo.
+- **External memory** (`ahri/`): fonte primária de aprendizado, orgânica, versionada em Git, mantida por pipeline, formato .json. Em conflito com memory/, prevalece.
+- **Pareamento:** ahri/ gera, memory/ reflete. Tudo no HQ tem correspondente no externo. Nem tudo no externo vira entrada no HQ.
+- **Influência reversa indireta:** memory/ → contexto → Ahri → comportamento → sessions → pipeline → ahri/. Não inverte o pareamento — é influência operacional, não fonte de verdade.
 - **São resoluções diferentes da mesma informação** — não duplicam, pareiam
-- HQ memory é o reflexo operacional do que é essencial na memória externa
 
 ### Contrato com Estado
 
@@ -115,6 +115,7 @@ Ahri (interpreta) → state.intentions (NL) → intent_resolver (traduz + valida
 - Ahri altera estado apenas nas 6 condições de P6
 - Ahri NÃO orquestra agentes — agentes leem estado e agem por condição
 - Ahri acessa HQ memory para contexto operacional, NÃO lê sessions diretamente
+- OpenClaw é funcional sem ahri_memory, Ahri é limitada sem — sistema completo depende da integração
 
 ---
 

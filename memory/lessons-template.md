@@ -2,7 +2,7 @@
 
 > **Natureza:** Este arquivo é MEMÓRIA DO HQ — experiência dinâmica, editável pelo Chefe e atualizada por pipeline.
 > **NÃO é contrato do sistema.** Contratos vivem em workspace/ e são escritos pelo arquiteto.
-> **Pareamento:** Cada entrada aqui tem correspondente em ahri/patterns/ ou ahri/learnings/ (formato JSON, programático).
+> **Pareamento:** Cada entrada aqui tem correspondente em ahri/patterns/ ou ahri/learnings/ (formato JSON, programático). ahri/ é a fonte primária — este arquivo é projeção curada.
 > **Domínio:** Padrões e aprendizados OPERACIONAIS — o que o sistema aprendeu no dia a dia.
 
 Erros, padrões e aprendizados do dia a dia com o agente.

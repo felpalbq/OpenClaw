@@ -4,6 +4,8 @@
 > **Natureza:** MEMÓRIA DO HQ — experiência dinâmica, editável pelo Chefe e atualizada por pipeline.
 > **NÃO é contrato do sistema.** Contratos vivem em workspace/ e são escritos pelo arquiteto.
 > **Pareamento:** Tudo aqui tem correspondente em ahri/ (formato JSON, programático). Nem tudo em ahri/ vira entrada aqui.
+> **Fonte de verdade:** ahri/ é a fonte primária de aprendizado. Este arquivo é PROJEÇÃO operacional curada — não fonte alternativa. ahri/ gera, memory/ reflete.
+> **Influência reversa:** memory/ molda comportamento da Ahri (via contexto carregado), o que gera novas interações que voltam a ahri/ via pipeline. Não inverte o pareamento.
 
 ## 📂 Topic Files
 
@@ -32,8 +34,8 @@ Conversa (Telegram) → ahri/sessions/YYYY-MM-DD.jsonl (bruto, JSONL)
 | O que é | Onde | Quem escreve | Muda em runtime? |
 |---------|------|-------------|-----------------|
 | Contrato do sistema | workspace/ | Arquiteto | Não |
-| Memória do HQ | memory/ | Pipeline + Chefe | Sim |
-| Memória externa | ahri/ | Pipeline | Sim |
+| Memória do HQ | memory/ | Pipeline + Chefe | Sim | Projeção curada (não é fonte de verdade) |
+| Memória externa | ahri/ | Pipeline | Sim | **Fonte primária** de aprendizado |
 | Estado volátil | state/ | Sistema | Sim |
 
 ## 📸 Estado Atual
