@@ -1,14 +1,9 @@
 import json
 import os
-import sys
 import uuid
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-
-ROOT = str(Path(__file__).parent)
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
 
 from state import read_state, write_state, merge_state, update_state
 from tools.registry import TOOL_REGISTRY, get_tool

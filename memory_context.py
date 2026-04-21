@@ -1,14 +1,6 @@
 """
 Context read/write — delegates to ahri memory repo.
 """
-import os
-import sys
-from pathlib import Path
-
-AHRI_MEMORY_DIR = os.environ.get("AHRI_MEMORY_DIR", str(Path(__file__).parent.parent / "ahri"))
-
-if AHRI_MEMORY_DIR not in sys.path:
-    sys.path.insert(0, AHRI_MEMORY_DIR)
 
 import ahri as _ahri
 

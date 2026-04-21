@@ -1,17 +1,9 @@
 import json
 import os
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ROOT = str(Path(__file__).parent)
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
 AHRI_MEMORY_DIR = Path(os.environ.get("AHRI_MEMORY_DIR", str(Path(__file__).parent.parent / "ahri")))
-
-if str(AHRI_MEMORY_DIR) not in sys.path:
-    sys.path.insert(0, str(AHRI_MEMORY_DIR))
 
 import ahri as ahri_memory
 

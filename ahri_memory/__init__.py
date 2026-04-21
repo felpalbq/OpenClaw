@@ -2,13 +2,6 @@
 Thin wrapper for ahri memory repo.
 All operations delegate to the ahri package (repo at AHRI_MEMORY_DIR).
 """
-import os
-import sys
-
-AHRI_MEMORY_DIR = os.environ.get("AHRI_MEMORY_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ahri"))
-
-if AHRI_MEMORY_DIR not in sys.path:
-    sys.path.insert(0, AHRI_MEMORY_DIR)
 
 import ahri as _ahri
 

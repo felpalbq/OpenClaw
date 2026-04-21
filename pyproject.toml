@@ -1,0 +1,13 @@
+[project]
+name = "openclaw"
+version = "1.0.0"
+description = "Assistente pessoal operacional de propósito geral"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["agents", "state", "tools", "ahri_memory"]
+py-modules = ["executor", "intent_resolver", "scheduler", "extraction", "fast_patterns", "memory_sessions", "memory_context"]
