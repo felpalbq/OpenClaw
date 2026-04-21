@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import time
 import uuid
 import importlib
@@ -160,12 +161,17 @@ def executor_cycle():
                 }
 
                 # Check for integration status in result
-                if "_integration_status" in result.get("data", {}) or "_integration_status" in result:
-                    int_status = result.get("data", {}).get("_integration_status") or result.get("_integration_status")
-                    if int_status and isinstance(int_status, dict):
-                        tool_domain = action.get("tool", "").split("_")[0]
-                        state.setdefault("integrations", {})
-                        state["integrations"][tool_domain] = int_status
+                result_data = result.get("data", {})
+                if isinstance(result_data, dict) and "_integration_status" in result_data:
+                    int_status = result_data["_integration_status"]
+                elif isinstance(result, dict) and "_integration_status" in result:
+                    int_status = result["_integration_status"]
+                else:
+                    int_status = None
+                if int_status and isinstance(int_status, dict):
+                    tool_domain = action.get("tool", "").split("_")[0]
+                    state.setdefault("integrations", {})
+                    state["integrations"][tool_domain] = int_status
 
                 if result["status"] == "success":
                     action["status"] = "done"

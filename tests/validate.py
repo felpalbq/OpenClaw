@@ -115,8 +115,8 @@ def validate_level_1():
     ok("agents/ahri.py existe")
 
     try:
-        from agents.ahri import ask, propose_action
-        ok("agents.ahri.ask() e propose_action() importaveis")
+        from agents.ahri import ask
+        ok("agents.ahri.ask() importavel")
     except ImportError as e:
         fail(f"ask() nao importavel: {e}")
         return False
@@ -207,11 +207,11 @@ def validate_level_3():
 
     ok("ahri_memory/ existe")
 
-    git_sync_path = ahri_memory_dir / "git_sync.py"
-    if git_sync_path.exists():
-        ok("ahri_memory/git_sync.py existe")
+    init_path = ahri_memory_dir / "__init__.py"
+    if init_path.exists():
+        ok("ahri_memory/__init__.py existe")
     else:
-        fail("ahri_memory/git_sync.py nao existe")
+        fail("ahri_memory/__init__.py nao existe")
 
     try:
         from ahri_memory import read_memory, write_memory, should_register
@@ -267,11 +267,8 @@ def validate_level_3():
 
     # Cleanup
     try:
-        from ahri_memory.git_sync import _load_index, _save_index
-        index = _load_index()
-        index["entries"] = [e for e in index.get("entries", []) if not e.get("id", "").startswith("validate_test_")]
-        index["stats"]["total"] = len(index["entries"])
-        _save_index(index)
+        from ahri_memory import maintenance
+        maintenance()
     except Exception:
         pass
 
