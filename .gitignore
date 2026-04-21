@@ -25,8 +25,4 @@ flows/
 tasks/
 update-check.json
 
-# Local ahri_memory (sessions and interactions are in ahri/ repo now)
-ahri_memory/interactions/
-ahri_memory/__pycache__/
-ahri_memory/clients/
-ahri_memory/patterns/
+# ahri_memory is now a thin wrapper — data lives in ahri/ repo
