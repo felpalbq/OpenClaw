@@ -23,12 +23,6 @@ def _validate_config():
     return True, config, []
 
 
-def _write_integration_status(status_data: dict):
-    from state import merge_state
-    merge_state({"integrations": {"trello": status_data}},
-                agent="trello_tool", reason="integration_status_update")
-
-
 def _trello_request(method: str, endpoint: str,
                     params: Optional[dict] = None,
                     body: Optional[dict] = None) -> dict:
@@ -56,19 +50,9 @@ def _trello_request(method: str, endpoint: str,
                  "recurso nao encontrado" if e.code == 404 else
                  "rate limit" if e.code == 429 else
                  f"erro HTTP {e.code}")
-        _write_integration_status({
-            "status": "error",
-            "last_error": {"integration": "trello", "stage": endpoint,
-                           "error": f"HTTP {e.code}: {body_text}", "cause": cause}
-        })
         raise Exception(f"Trello {e.code}: {cause}")
 
     except urllib.error.URLError as e:
-        _write_integration_status({
-            "status": "error",
-            "last_error": {"integration": "trello", "stage": endpoint,
-                           "error": str(e.reason), "cause": "erro de rede"}
-        })
         raise
 
 
@@ -105,19 +89,18 @@ def create_card(title: str, description: str = "",
         body["idLabels"] = labels
 
     result = _trello_request("POST", "cards", body=body)
-    _write_integration_status({"status": "connected", "last_action": "create_card"})
-    return {"id": result.get("id"), "url": result.get("shortUrl"), "name": result.get("name")}
+    return {"id": result.get("id"), "url": result.get("shortUrl"), "name": result.get("name"), "_integration_status": {"status": "connected", "last_action": "create_card"}}
 
 
 def update_card(card_id: str, updates: dict) -> dict:
     result = _trello_request("PUT", f"cards/{card_id}", body=updates)
-    _write_integration_status({"status": "connected", "last_action": "update_card"})
+    result["_integration_status"] = {"status": "connected", "last_action": "update_card"}
     return result
 
 
 def delete_card(card_id: str) -> dict:
     result = _trello_request("DELETE", f"cards/{card_id}")
-    _write_integration_status({"status": "connected", "last_action": "delete_card"})
+    result["_integration_status"] = {"status": "connected", "last_action": "delete_card"}
     return result
 
 

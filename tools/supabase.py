@@ -8,7 +8,6 @@ import json
 import urllib.request
 import urllib.error
 from typing import Optional, List, Dict, Any
-from state import write_state
 
 
 # ============================================================
