@@ -77,6 +77,26 @@ def merge_state(partial: dict, agent: str = "", reason: str = ""):
     write_state(state, agent=agent, reason=reason)
 
 
+def update_state(mutator_fn, agent: str = "", reason: str = "", max_retries: int = 3):
+    """Read state, apply a mutator function, and write back with compare-and-swap.
+
+    Use this for mutations that modify lists or need to read-then-modify.
+    mutator_fn receives the current state dict and should modify it in-place.
+    Retries if the state was modified by another process between read and write.
+    """
+    for attempt in range(max_retries):
+        state = read_state()
+        before_meta = state.get("meta", {}).get("last_written_at", "")
+        mutator_fn(state)
+        current = read_state()
+        current_meta = current.get("meta", {}).get("last_written_at", "")
+        if current_meta == before_meta or attempt == max_retries - 1:
+            write_state(state, agent=agent, reason=reason)
+            return
+        # State was modified by another process, retry
+    # Fallback: write anyway on last attempt (already handled above)
+
+
 def _deep_merge(base: dict, override: dict):
     for key, value in override.items():
         if key in base and isinstance(base[key], dict) and isinstance(value, dict):

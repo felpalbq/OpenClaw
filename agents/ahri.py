@@ -10,7 +10,7 @@ ROOT = str(Path(__file__).parent.parent)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from state import read_state, write_state
+from state import read_state, write_state, merge_state, update_state
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -126,17 +126,22 @@ def _record_notification(priority: str, state: dict):
 
 
 def send_notification(text: str, priority: str = "normal", chat_id: str = None) -> bool:
-    state = read_state()
-    if not _can_notify(priority, state):
-        if priority in ("normal", "baixa"):
-            state.setdefault("proactivity", {}).setdefault("pending_digest", []).append(text)
-            write_state(state, agent="ahri", reason="notification_queued")
-            return False
+    sent = False
 
-    _record_notification(priority, state)
-    write_state(state, agent="ahri", reason="notification_sent")
+    def _mutate(state):
+        nonlocal sent
+        if not _can_notify(priority, state):
+            if priority in ("normal", "baixa"):
+                state.setdefault("proactivity", {}).setdefault("pending_digest", []).append(text)
+                return
+        _record_notification(priority, state)
+        sent = True
 
-    return telegram_send(text, chat_id)
+    update_state(_mutate, agent="ahri", reason="notification_check")
+
+    if sent:
+        return telegram_send(text, chat_id)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -188,25 +193,35 @@ def _parse_approval(text: str):
 
 
 def _approve_via_state(action_id: str, approved_by: str) -> bool:
-    state = read_state()
-    for action in state.get("pending_actions", []):
-        if action.get("id") == action_id and action.get("status") == "pending_approval":
-            action["status"] = "approved"
-            action["approved_at"] = datetime.now().isoformat()
-            action["approved_by"] = approved_by
-            write_state(state, agent="user", reason=f"approved_{action_id}")
-            return True
-    return False
+    found = False
+
+    def _mutate(state):
+        nonlocal found
+        for action in state.get("pending_actions", []):
+            if action.get("id") == action_id and action.get("status") == "pending_approval":
+                action["status"] = "approved"
+                action["approved_at"] = datetime.now().isoformat()
+                action["approved_by"] = approved_by
+                found = True
+                return
+
+    update_state(_mutate, agent="user", reason=f"approved_{action_id}")
+    return found
 
 
 def _reject_via_state(action_id: str, rejected_by: str) -> bool:
-    state = read_state()
-    for action in state.get("pending_actions", []):
-        if action.get("id") == action_id and action.get("status") == "pending_approval":
-            action["status"] = "rejected"
-            write_state(state, agent="user", reason=f"rejected_{action_id}")
-            return True
-    return False
+    found = False
+
+    def _mutate(state):
+        nonlocal found
+        for action in state.get("pending_actions", []):
+            if action.get("id") == action_id and action.get("status") == "pending_approval":
+                action["status"] = "rejected"
+                found = True
+                return
+
+    update_state(_mutate, agent="user", reason=f"rejected_{action_id}")
+    return found
 
 
 def get_pending_approvals() -> list:
@@ -237,9 +252,10 @@ def _register_intention_via_state(text: str, source: str = "ahri", context: dict
     if context:
         intention["context"] = context
 
-    state = read_state()
-    state.setdefault("intentions", []).append(intention)
-    write_state(state, agent=source, reason=f"intention_registered_{intention_id}")
+    def _mutate(state):
+        state.setdefault("intentions", []).append(intention)
+
+    update_state(_mutate, agent=source, reason=f"intention_registered_{intention_id}")
 
     return intention_id
 
@@ -256,6 +272,9 @@ def _get_ambiguous_intentions() -> list:
 def handle_telegram_update(update: dict):
     text = update.get("message", {}).get("text", "")
     chat_id = str(update.get("message", {}).get("chat", {}).get("id", ""))
+
+    if TELEGRAM_CHAT_ID and chat_id != TELEGRAM_CHAT_ID:
+        return
 
     action_type, action_id = _parse_approval(text)
     if action_type == "approve":
@@ -337,10 +356,7 @@ def ask(question: str, state: dict = None) -> str:
         pass
 
     # Update runtime state
-    state = read_state()
-    state.setdefault("ahri_runtime", {})
-    state["ahri_runtime"]["last_interaction"] = datetime.now().isoformat()
-    write_state(state, agent="ahri", reason="interaction")
+    merge_state({"ahri_runtime": {"last_interaction": datetime.now().isoformat()}}, agent="ahri", reason="interaction")
 
     return response
 
@@ -370,21 +386,19 @@ def ask_for_result(action_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 def start_audit(scope: str, duration_minutes: int = 30):
-    state = read_state()
-    state.setdefault("ahri_runtime", {})
-    state["ahri_runtime"]["audit_mode"] = True
-    state["ahri_runtime"]["audit_scope"] = scope
-    state["ahri_runtime"]["audit_expires_at"] = (datetime.now() + timedelta(minutes=duration_minutes)).isoformat()
-    write_state(state, agent="user", reason="audit_authorized")
+    merge_state({"ahri_runtime": {
+        "audit_mode": True,
+        "audit_scope": scope,
+        "audit_expires_at": (datetime.now() + timedelta(minutes=duration_minutes)).isoformat()
+    }}, agent="user", reason="audit_authorized")
 
 
 def stop_audit():
-    state = read_state()
-    state.setdefault("ahri_runtime", {})
-    state["ahri_runtime"]["audit_mode"] = False
-    state["ahri_runtime"]["audit_scope"] = None
-    state["ahri_runtime"]["audit_expires_at"] = None
-    write_state(state, agent="ahri", reason="audit_expired")
+    merge_state({"ahri_runtime": {
+        "audit_mode": False,
+        "audit_scope": None,
+        "audit_expires_at": None
+    }}, agent="ahri", reason="audit_expired")
 
 
 def is_audit_active(state: dict = None) -> bool:
