@@ -1,0 +1,30 @@
+{
+  "updated_at": "2026-04-27T22:18:11.774729",
+  "platforms": {
+    "telegram": [
+      {
+        "id": "8318556598",
+        "name": "Felipe Souza",
+        "type": "dm",
+        "thread_id": null
+      }
+    ],
+    "discord": [],
+    "whatsapp": [],
+    "slack": [],
+    "signal": [],
+    "mattermost": [],
+    "matrix": [],
+    "homeassistant": [],
+    "email": [],
+    "sms": [],
+    "dingtalk": [],
+    "feishu": [],
+    "wecom": [],
+    "wecom_callback": [],
+    "weixin": [],
+    "bluebubbles": [],
+    "qqbot": [],
+    "yuanbao": []
+  }
+}
