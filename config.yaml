@@ -113,6 +113,51 @@ code_execution:
   max_tool_calls: 50
 delegation:
   max_iterations: 50
+  max_concurrent_children: 1
+  model: glm-5.1:cloud
+  timeouts:
+    context_engine: 30
+    intelligence_agent: 90
+    idea_agent: 60
+    critic_agent: 45
+    writer: 120
+    designer: 90
+    media_agent: 180
+    executor: 60
+    orchestrator: 30
+
+mcp_servers:
+  google-workspace:
+    command: npx
+    args: ["-y", "@gptscript-ai/gog-mcp"]
+    env:
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+      GOOGLE_REFRESH_TOKEN: "${GOOGLE_REFRESH_TOKEN}"
+  trello:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-trello"]
+    env:
+      TRELLO_API_KEY: "${TRELLO_API_KEY}"
+      TRELLO_TOKEN: "${TRELLO_TOKEN}"
+  github:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_TOKEN}"
+  filesystem:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/root/.hermes", "/root/.hermes/state"]
+  apify:
+    command: npx
+    args: ["-y", "@apify/mcp-server"]
+    env:
+      APIFY_TOKEN: "${APIFY_TOKEN}"
+
+web:
+  backend: tavily
+  api_key: "${TAVILY_API_KEY}"
+
 display:
   compact: false
   tool_progress: all

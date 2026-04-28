@@ -28,6 +28,21 @@ Felipe — estudante ADS, impressor grafico diurno, social media estrategico not
 - Nunca aula no Instagram, nunca oferta explicita de venda
 - 6 clientes ativos (perfis abaixo)
 
+## Arquitetura de Agentes (v2)
+O sistema usa 9 agentes especializados, sequenciais, com Critic Agent como gatekeeper:
+
+1. **Orchestrator** (Kimi K2.6) — State machine, gerencia fila e logs
+2. **Context Engine** (GLM 5.1) — Carrega perfil de cliente, output JSON padronizado
+3. **Intelligence Agent** (GLM 5.1) — Trends, concorrencia, padroes, insights estruturados
+4. **Idea Agent** (GLM 5.1) — Angulos e hipoteses de conteudo (nao "pautas" prontas)
+5. **Critic Agent** (Kimi K2.6) — Detecta generico, valida alinhamento, score 0-10. Gatekeeper obrigatorio.
+6. **Writer** (GLM 5.1) — Copy com estrutura obrigatoria: hook → desenvolvimento → retencao → CTA
+7. **Designer** (GLM 5.1) — Layout visual baseado em copy + estilo do cliente
+8. **Media Agent** (GLM 5.1) — Edicao de video com regras: tempo de corte, ritmo, estilo
+9. **Executor** (GLM 5.1) — Atualiza Trello, versiona, salva outputs, dispara proximos fluxos
+
+Regras: Agentes NUNCA trabalham em paralelo no mesmo fluxo. Critic score < 7 = rejeitado (loop de retorno). State machine em tasks.md e fonte de verdade.
+
 ## Clientes ativos
 
 ### 1. Casa do Bicho
