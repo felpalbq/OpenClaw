@@ -1,3 +1,8 @@
+---
+name: content-writer
+description: "Gera copy estruturada com formato obrigatorio: hook → desenvolvimento → retencao → CTA. Respeita tom de voz do cliente e restricoes."
+---
+
 # content-writer
 
 ## Description

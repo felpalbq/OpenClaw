@@ -1,3 +1,8 @@
+---
+name: intelligence-agent
+description: "Merge de researcher + analyst. Pesquisa trends, analisa concorrencia, identifica padroes e gera insights estruturados. NAO gera conteudo pronto."
+---
+
 # intelligence-agent
 
 ## Description

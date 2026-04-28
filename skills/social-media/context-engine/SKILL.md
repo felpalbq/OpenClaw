@@ -1,3 +1,8 @@
+---
+name: context-engine
+description: "Carrega o perfil do cliente de .md, aplica regras fixas e gera contexto padronizado em JSON. Primeiro agente de qualquer fluxo."
+---
+
 # context-engine
 
 ## Description

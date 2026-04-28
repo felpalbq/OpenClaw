@@ -1,3 +1,8 @@
+---
+name: content-orchestrator
+description: "State machine que gerencia a fila de tarefas, decide o proximo agente, monitora timeouts e loga resultados. Fonte de verdade do sistema."
+---
+
 # content-orchestrator
 
 ## Description

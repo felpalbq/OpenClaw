@@ -1,3 +1,8 @@
+---
+name: media-agent
+description: "Edita videos brutos com regras de corte, ritmo, estilo e legendas. Transforma materiais enviados pelo cliente em reels profissionais."
+---
+
 # media-agent
 
 ## Description

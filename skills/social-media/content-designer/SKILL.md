@@ -1,3 +1,8 @@
+---
+name: content-designer
+description: "Cria layout visual baseado na copy estruturada + estilo visual do cliente. Gera descricao de layout ou instrucoes para ferramentas de design."
+---
+
 # content-designer
 
 ## Description

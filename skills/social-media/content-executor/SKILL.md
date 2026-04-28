@@ -1,3 +1,8 @@
+---
+name: content-executor
+description: "Atualiza Trello, versiona no GitHub, salva no Drive, dispara proximos fluxos. E o ops agent do sistema."
+---
+
 # content-executor
 
 ## Description

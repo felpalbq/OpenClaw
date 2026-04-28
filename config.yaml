@@ -116,30 +116,17 @@ delegation:
   max_concurrent_children: 1
   model: glm-5.1:cloud
   timeouts:
-    context_engine: 30
-    intelligence_agent: 90
-    idea_agent: 60
-    critic_agent: 45
-    writer: 120
-    designer: 90
-    media_agent: 180
-    executor: 60
-    orchestrator: 30
+    context_engine: 45
+    intelligence_agent: 120
+    idea_agent: 90
+    critic_agent: 120
+    writer: 180
+    designer: 120
+    media_agent: 240
+    executor: 90
+    orchestrator: 45
 
 mcp_servers:
-  google-workspace:
-    command: npx
-    args: ["-y", "@gptscript-ai/gog-mcp"]
-    env:
-      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
-      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
-      GOOGLE_REFRESH_TOKEN: "${GOOGLE_REFRESH_TOKEN}"
-  trello:
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-trello"]
-    env:
-      TRELLO_API_KEY: "${TRELLO_API_KEY}"
-      TRELLO_TOKEN: "${TRELLO_TOKEN}"
   github:
     command: npx
     args: ["-y", "@modelcontextprotocol/server-github"]
@@ -150,9 +137,13 @@ mcp_servers:
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/root/.hermes", "/root/.hermes/state"]
   apify:
     command: npx
-    args: ["-y", "@apify/mcp-server"]
+    args: ["-y", "@apify/actors-mcp-server@0.9.20"]
     env:
       APIFY_TOKEN: "${APIFY_TOKEN}"
+  # TODO: Google Workspace e Trello nao tem MCP oficial no npm.
+  # Usar skills nativas ou APIs diretas ate MCPs estaveis existirem.
+  # google-workspace: skill nativa @productivity/google-workspace
+  # trello: skill nativa a ser criada em skills/social-media/trello-sync/
 
 web:
   backend: tavily

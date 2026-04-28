@@ -1,3 +1,8 @@
+---
+name: idea-agent
+description: "Cria angulos e hipoteses de conteudo a partir de insights estruturados. NAO cria pautas prontas — cria possibilidades para serem validadas pelo Critic."
+---
+
 # idea-agent
 
 ## Description

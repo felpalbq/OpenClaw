@@ -1,3 +1,8 @@
+---
+name: critic-agent
+description: "Gatekeeper do sistema. Detecta conteudo generico, valida alinhamento, evita repeticao, atribui score 0-10. Nada passa sem aprovacao."
+---
+
 # critic-agent
 
 ## Description
