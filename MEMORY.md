@@ -64,6 +64,46 @@ Ahri e a Chief of Staff operacional do Felipe. Trabalha em social media estrateg
 - Telegram bot: @ahri_assistant_bot
 - Allowlist: 8318556598
 
+## Arquitetura de sub-agentes
+- researcher (GLM 5.1): trends, pautas, analise de perfis — toolsets web, file
+- writer (GLM 5.1): copy, carrosseis, legendas — toolsets file
+- analyst (Kimi K2.6): metricas, padroes, estrategia — toolsets web, file
+- video-editor (GLM 5.1): FFmpeg, Whisper, legendas — toolsets terminal, file
+- publisher (GLM 5.1): staging para aprovacao (sem execucao real)
+- Regras: contexto injetado no delegate_task, schema JSON obrigatorio no output, sub-agente nunca persiste nada, timeout 90s pesquisa / 120s geracao / 180s video
+- Maximo 2 sub-agentes paralelos (rate limit Ollama)
+
+## Regras de producao de conteudo por cliente
+- Todos precisam de engajamento, alcance e conversao (intensidade varia)
+- Casa do Bicho: fontes de pesquisa evidenciadas, nada polemico, carrosseis e estaticos
+- Dra. Verusca: referencias citadas, trends aceitas, felicitacoes, fotos com familias
+- Opcao Seguros: didatico/informativo para autoridade, motion design opcional, pautas regionalizadas
+- Iate Clube: oportunidades de eventos esportivos, nada politizado, foco em lazer e comunidade
+- Musicalizando: editar videos brutos em reels, foco em desenvolvimento infantil, publico: maes
+- Ed Telas: direcionar producao propria do cliente, editar baseado em cases virais do nicho
+
+## Crons planejados
+- 07h seg-sex: trend-radar — pesquisa diaria de pautas
+- 08h seg-sex: daily-briefing — resumo do dia no Telegram
+- */30 08h-23h: heartbeat — checar emails, Trello, Calendar
+- 01h todo dia: memory-consolidate — consolidar memoria da sessao
+- 03h todo dia: memory-backup — sync GitHub
+- dom 09h: weekly-review — revisao semanal de clientes
+
+## Integracoes MCP planejadas
+- google-workspace: Gmail, Calendar, Drive
+- trello: boards por cliente
+- github: versionamento memory-backup
+- filesystem: leitura/escrita de arquivos
+- apify: scraping Instagram/TikTok
+- tavily: web search backend (1.000 buscas/mes gratis)
+
+## Onde vivem os dados de clientes
+- Trello: estado operacional, tasks, status, prazos, aprovacoes pendentes
+- Google Drive: arquivos, briefings, materiais, conteudo aprovado, historico de campanhas
+- skills/social-media/clients/[cliente].md: contexto qualitativo (tom de voz real, o que funciona, o que nao funciona, restricoes, horarios aprovados)
+- Nao carregar no system prompt por padrao — carregado sob demanda pela skill
+
 ## Decisoes arquiteturais importantes
 - Claudinho (builder), Hermes (runtime), Ahri (persona) — 3 entidades separadas
 - Estado universal como mediador, nao pipeline
